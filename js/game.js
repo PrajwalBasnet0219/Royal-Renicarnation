@@ -148,6 +148,26 @@ const Game = {
       this.secretsKnown = Math.min(LORE.secrets.length, nq.act);
     }
     UI.refresh();
+    // the new quest may already be satisfied (visited early, tuned early...)
+    this.catchUpQuest();
+  },
+
+  /* If the newly-active quest is already satisfied by earlier play,
+     complete it without making the player redo it. */
+  catchUpQuest() {
+    const q = this.quest();
+    if (!q || !Entities.player) return;
+    const g = q.goal, p = Entities.player;
+    if (g.kind === 'site') {
+      const s = SITES.find(x => x.id === g.site);
+      if (s && dist2D(p.x, p.z, s.x, s.z) < s.r + 40) this.checkGoal('site', s.id);
+      // standing stones count as having been there: fast-travel back instead
+      else if (s && this.visited[s.id]) { /* re-enter to complete */ }
+    }
+    else if (g.kind === 'flag' && this.flags[g.flag]) this.checkGoal('flag');
+    else if (g.kind === 'tune' && this.tuning >= g.value) this.checkGoal('tune');
+    else if (g.kind === 'item' && (this.bag[g.item] || this.equip.weapon === g.item)) this.checkGoal('item');
+    else if (g.kind === 'dungeon' && this.flags['solved_' + g.id]) this.checkGoal('dungeon', g.id);
   },
 
   grantXp(n) {
@@ -1038,8 +1058,9 @@ const Game = {
   },
 
   solveDungeon(d) {
-    if (d.solved) return;
+    if (d.solved) { this.checkGoal('dungeon', d.def.id); return; }
     d.solved = true;
+    this.flags['solved_' + d.def.id] = true;
     Sound.sfx('seal');
     Entities.ring(Entities.player.x, Entities.player.y, Entities.player.z, 0xbfe0ff, 7);
     const r = d.def.reward;
@@ -1068,6 +1089,7 @@ const Game = {
 
   breakSeal(d) {
     d.solved = true;
+    this.flags['solved_' + d.def.id] = true;
     const def = HEROINES.find(h => h.id === 'liora');
     Sound.sfx('seal');
     Entities.ring(Entities.player.x, Entities.player.y, Entities.player.z, 0xffffff, 9);
@@ -1337,6 +1359,7 @@ const Game = {
     World.update(p.x, p.z, true);
     this.started = true;
     UI.refresh();
+    this.catchUpQuest();   // a loaded save may already satisfy the current quest
     return true;
   },
   eraseSlot(i) { Store.del(this.slotKey(i)); },
@@ -1415,27 +1438,25 @@ const Game = {
       const H = World.interior.hallPt;
       if (dist2D(p.x, p.z, H.x, H.z) < 7) this.checkGoal('reach', 'castle_hall');
     }
-    // the ward hall: walking to the dais completes q0_walk (it had no trigger)
-    if (World.mode === 'interior' && World.interior && World.interior.cur === 0) {
-      const H = World.interior.hallPt;
-      if (dist2D(p.x, p.z, H.x, H.z) < 7) this.checkGoal('reach', 'castle_hall');
-    }
     for (const s of SITES) {
-      if (this.visited[s.id]) continue;
-      if (dist2D(p.x, p.z, s.x, s.z) < s.r + 40) {
+      const inside = dist2D(p.x, p.z, s.x, s.z) < s.r + 40;
+      if (!this.visited[s.id] && inside) {
         this.visited[s.id] = true;
         UI.banner(s.name, s.kind);
         UI.toast(s.name + ' discovered. You can travel back here from the realm map.', 'good');
         if (s.id === 'whisper') this.unlockCodex('drift');
         if (s.id === 'prismere') this.unlockCodex('prismere');
-        this.checkGoal('site', s.id);
       }
+      // quest progress must trigger even if visited before the quest started
+      if (inside) this.checkGoal('site', s.id);
     }
-    // clue pickups at ruins and shrines
-    if (!this.flags.clue_gloam && dist2D(p.x, p.z, -1900, 900) < 60) {
-      this.flags.clue_gloam = true;
-      this.unlockCodex('gloam');
-      UI.say('The chiselled mural', 'Seven figures. The seventh has been cut out while the stone was still soft, and whoever did it left a direction scratched into the base: seven hundred paces east, where the rock splits.', { then: () => this.checkGoal('flag') });
+    // clue pickups at ruins and shrines (quest check runs even if read early)
+    if (dist2D(p.x, p.z, -1900, 900) < 60) {
+      if (!this.flags.clue_gloam) {
+        this.flags.clue_gloam = true;
+        this.unlockCodex('gloam');
+        UI.say('The chiselled mural', 'Seven figures. The seventh has been cut out while the stone was still soft, and whoever did it left a direction scratched into the base: seven hundred paces east, where the rock splits.', { then: () => this.checkGoal('flag') });
+      } else this.checkGoal('flag');
     }
     if (!this.flags.clue_spine && dist2D(p.x, p.z, 2200, -2600) < 200) {
       this.flags.clue_spine = true;
