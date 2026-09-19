@@ -64,4 +64,4 @@ Load order matters: `three → core → story → models → world → entities 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Public domain (Unlicense) — see [LICENSE](LICENSE). No copyright claimed, do anything you want.
