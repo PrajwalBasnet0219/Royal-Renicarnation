@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Royal Reincarnation — The Eighth Loop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="preload" as="image" href="game_menu.png">
+</head>
+<body class="veiled">
+
+<canvas id="gl"></canvas>
+
+<div id="loading">
+  <canvas id="loadfx"></canvas>
+  <div class="boot">
+    <div class="load-ring" aria-hidden="true"><i></i><span>♛</span></div>
+    <h1>Royal Reincarnation</h1>
+    <div class="loadbar"><i id="loadbar-fill"></i><b id="loadbar-pct">0%</b></div>
+    <p id="boot-note">chalking the first loop…</p>
+    <p id="load-tip">Talk to people — language is how the veil learns you.</p>
+  </div>
+</div>
+
+<div id="begin" class="off"><p>Click anywhere to begin</p><span>sound awakens with your touch</span></div>
+
+<div id="title">
+  <div class="title-frame" aria-hidden="true"></div>
+  <div class="title-inner">
+    <div class="logo">
+      <span class="crown">♛</span>
+      <h1>Royal<br>Reincarnation</h1>
+      <div class="flourish"><span>❦</span></div>
+      <p class="sub">The Eighth Loop</p>
+    </div>
+    <nav>
+      <button class="tbtn primary" id="start-new"><span class="tin"><em>♛</em><span>New Game</span></span></button>
+      <button class="tbtn" id="start-cont"><span class="tin"><em>✦</em><span>Continue</span></span></button>
+      <button class="tbtn" id="start-load"><span class="tin"><em>◈</em><span>Load</span></span></button>
+      <button class="tbtn" id="start-opts"><span class="tin"><em>⚙</em><span>Options</span></span></button>
+    </nav>
+    <p class="title-base">Love <b>✦</b> Chaos <b>✦</b> Reincarnation</p>
+  </div>
+</div>
+
+<div id="hud" class="off">
+  <div class="hud-tl">
+    <div class="plate">
+      <div class="namerow2"><b id="who-name">Outsider</b><span>LV <i id="lvl-num">1</i></span></div>
+      <div class="mtr"><div class="lb"><span>VITALITY</span><span id="hp-num"></span></div><div class="track"><i id="hp-fill"></i></div></div>
+      <div class="mtr"><div class="lb"><span>FOCUS</span><span></span></div><div class="track f"><i id="fo-fill"></i></div></div>
+      <div class="mtr"><div class="lb"><span>VEIL TUNING</span><span id="tune-num">8</span></div><div class="track t"><i id="tune-fill"></i></div></div>
+      <div class="mtr"><div class="lb"><span>ATTUNED <em class="keyhint">1-5 · V</em></span><span id="elem-num">FIRE</span></div></div>
+    </div>
+    <div class="plate"><span id="dayphase">☀ Day</span></div>
+  </div>
+
+  <div class="hud-tr">
+    <div class="plate">
+      <span id="q-act"></span>
+      <b id="q-title"></b>
+      <span id="q-line"></span>
+    </div>
+  </div>
+
+  <div id="party"></div>
+  <div id="compass"><div id="cmarks"></div><div class="ccaret">▼</div><div class="clegend"><b class="q">★</b> quest &nbsp;<b class="d">▲</b> dungeon &nbsp;<b class="d">S</b> ship &nbsp;<b class="q">♥</b> sealed &nbsp;<b style="color:#ffd27a;font-weight:400">!</b> guard &nbsp;A heroine</div></div>
+  <div id="bossbar" class="off"><b id="boss-name"></b><div class="track"><i id="boss-fill"></i></div></div>
+  <div id="hints"><span>E speak</span><span>F strike</span><span>V cast</span><span>G orders</span><span>Space swim</span><span>Esc ring</span></div>
+  <div id="fps"></div>
+  <div id="coords"></div>
+  <div id="prompt" class="off"></div>
+  <div id="banner"></div>
+  <div id="toasts"></div>
+</div>
+
+<div id="dlg" class="off">
+  <div id="dlg-port"></div>
+  <div class="dlg-main">
+    <div id="dlg-who"></div>
+    <div id="dlg-sub"></div>
+    <div id="dlg-text"></div>
+    <div id="dlg-choices"></div>
+    <button id="dlg-next">Close  ·  E</button>
+  </div>
+</div>
+
+<div id="cmd-wheel"></div>
+<div id="ring-veil"></div>
+<div id="ring"></div>
+
+<div id="panel">
+  <header><h2 id="panel-title"></h2><button id="panel-close">Close  ·  Esc</button></header>
+  <div id="panel-body"></div>
+</div>
+
+<script src="js/three.min.js"></script>
+<script>if (typeof THREE === 'undefined') { document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>'); } </script>
+<script>if (typeof THREE === 'undefined') { document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>'); } </script>
+<script src="js/core.js"></script>
+<script src="js/story.js"></script>
+<script src="js/models.js"></script>
+<script src="js/world.js"></script>
+<script src="js/entities.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
