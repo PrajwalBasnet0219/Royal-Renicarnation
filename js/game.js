@@ -29,7 +29,10 @@ const Game = {
       maxhp: 60 + this.base.VIT * 11,
       maxfocus: 30 + this.base.AGI * 4,
       atk: 6 + this.base.STR * 3 + b.atk,
-      def: this.base.VIT + b.def
+      def: this.base.VIT + b.def,
+      // gacha caps: the player's crit has maxima; heroines' does not
+      critR: Math.min(60, 5 + this.level * 0.25),
+      critD: Math.min(300, 150 + this.level * 1.5)
     };
   },
   applyStats(full) {
@@ -173,7 +176,7 @@ const Game = {
   grantXp(n) {
     this.xp += n;
     let up = false;
-    while (this.xp >= this.xpNeed()) {
+    while (this.xp >= this.xpNeed() && this.level < 999) {
       this.xp -= this.xpNeed();
       this.level++;
       this.base.STR++; this.base.VIT++;
@@ -190,14 +193,28 @@ const Game = {
 
   onKill(m) {
     this.kills++;
-    this.grantXp(m.def.xp);
-    this.gold += 4 + ((Math.random() * 10) | 0);
+    // scale rewards with level so post-story grinding stays worthwhile
+    const lvScale = 1 + (this.level - 1) * 0.05;
+    this.grantXp(Math.round(m.def.xp * (m.worldBoss ? 10 : 1)));
+    this.gold += Math.round((4 + ((Math.random() * 10) | 0)) * lvScale);
+    // heroines earn their own xp + levels from every kill (bonded or not, near or far)
+    if (Entities.heroineGainXp) {
+      const share = Math.round(m.def.xp * 0.6);
+      for (const h of Entities.npcs) {
+        if (h.type === 'heroine' && (h.recruited || this.met[h.def.id])) Entities.heroineGainXp(h, share);
+      }
+    }
     if (m.def.boss) {
       // a guardian falls: crowns, closeness, and a mark on the dungeon
-      this.gold += 150;
+      this.gold += m.worldBoss || m.def.worldBoss ? 600 : 150;
       for (const h of Entities.companions) this.addAff(h.def.id, 2);
       if (m.dungeonId && World.builtDungeons[m.dungeonId]) World.builtDungeons[m.dungeonId].bossDead = true;
-      UI.banner(m.def.name + ' falls', 'the dark here is quieter now');
+      if (m.worldBoss || m.def.worldBoss) {
+        UI.banner(m.def.name + ' falls', 'an OP terror of the wilds — the roads breathe easier');
+        this.addRep('rose', 2);
+      } else {
+        UI.banner(m.def.name + ' falls', 'the dark here is quieter now');
+      }
       Sound.sfx('seal');
     }
     if (m.key === 'phoenix') {
@@ -243,9 +260,11 @@ const Game = {
   faint() {
     const p = Entities.player;
     p.aboard = false;
+    p.ferry = null; p.aboardFerry = false; p.dragon = false;
     Entities.endRide(true);
     p.hp = p.maxhp * 0.5;
     if (World.mode === 'dungeon') this.leaveDungeon();
+    if (World.mode === 'building') this.leaveBuilding();
     const s = SITES.find(x => this.visited[x.id]) || SITES[0];
     p.x = s.x; p.z = s.z + s.r * 0.3; p.y = World.height(p.x, p.z);
     this.gold = Math.max(0, this.gold - 20);
@@ -282,6 +301,7 @@ const Game = {
 
     if (World.mode === 'dungeon') return this.interactDungeon();
     if (World.mode === 'interior') return this.interactInterior();
+    if (World.mode === 'building') return this.interactBuilding();
     // at the helm: talk only to someone at your elbow, else step ashore
     if (p.aboard) {
       const mate = Entities.nearestTalkable(p.x, p.z, 2.2);
@@ -290,6 +310,10 @@ const Game = {
     }
     // riding pillion: E stops the wagons
     if (p.riding) return Entities.endRide();
+    // aboard a ferry: E steps ashore (talk range is the whole deck)
+    if (p.ferry) return Entities.leaveFerry();
+    // dragonback: E finds a landing
+    if (p.dragon) return Entities.leaveDragon();
 
     const who = Entities.nearestTalkable(p.x, p.z, 3.8);
     const wd = who ? dist2D(p.x, p.z, who.x, who.z) : 1e9;
@@ -352,6 +376,22 @@ const Game = {
 
     // nearest wins, so companions never body-block doors and wards
     if (shipReady && sd < 7 && sd <= wd && sd <= kd && sd <= gd && sd <= ddDist) return Entities.boardShip();
+    // ferries: dock bell or the hull itself
+    if (Entities.ferries && Entities.ferries.length) {
+      let bf = null, bfD = 9;
+      for (const F of Entities.ferries) {
+        const q = dist2D(p.x, p.z, F.x, F.z);
+        if (q < bfD) { bfD = q; bf = F; }
+      }
+      let dockD = 1e9, dockSite = null;
+      for (const s of SITES) {
+        if (!s.dock) continue;
+        const q = dist2D(p.x, p.z, s.dock.x, s.dock.z);
+        if (q < dockD) { dockD = q; dockSite = s; }
+      }
+      if (bf && bfD <= wd && bfD <= kd) return this.takeFerry(bf);
+      if (dockSite && dockD < 6 && dockD <= wd) return this.takeFerry(null, dockSite);
+    }
     if (st && stDist < 6 && stDist <= wd) return this.useWaystone(st);
     if (!upHigh && World.skyGate && gateD < 5 && gateD <= wd) return this.ascendSky(0);
     if (upHigh && padIdx >= 0 && padD < 7) {
@@ -368,6 +408,15 @@ const Game = {
     if (bd && bdDist < 5 && bdDist <= wd) return this.bountyBoard(bd);
     if (wg && wgDist < 5 && wgDist <= wd) return this.hireWagon(wg);
     if (sg && sgDist < 5 && sgDist <= wd) return this.readSignpost(sg);
+    // walk-in building doors (nearest door within 4.5 m, loses ties to talk)
+    let door = null, doorD = 4.5;
+    if (World.doors) {
+      for (const dr of World.doors) {
+        const q = dist2D(p.x, p.z, dr.x, dr.z);
+        if (q < doorD) { doorD = q; door = dr; }
+      }
+    }
+    if (door && doorD <= wd) return this.enterBuilding(door);
     if (kd < 10 && kd <= wd && kd <= gd && kd <= ddDist) return this.enterKeep();
     if (gd < 9 && gd <= wd && gd <= ddDist) return this.tryGate();
     if (dd && ddDist < 8 && ddDist <= wd) {
@@ -379,6 +428,11 @@ const Game = {
       return this.tryDungeon(dd);
     }
     if (who) return this.talk(who);
+    // the gold dragon, if she is perched in reach
+    if (Entities.dragon && !p.dragon) {
+      const drd = dist2D(p.x, p.z, Entities.dragon.x, Entities.dragon.z);
+      if (drd < 9 && drd <= wd) return Entities.boardDragon();
+    }
     UI.toast('Nothing here answers to you.');
   },
 
@@ -388,6 +442,8 @@ const Game = {
     this.talkedTo[e.name] = true;
     if (first) this.addTuning(6, 'The veil is learning the shape of you.');
     else this.addTuning(0.6);
+
+    if (e.job === 'keeper') return this.talkKeeper(e, first);
 
     if (e.job === 'scribe' && !this.playerName) {
       return UI.say(e.name, 'Arrivals get an entry. Arrivals that walk get a name in it.', {
@@ -493,6 +549,33 @@ const Game = {
   npcAnswer(e, line) {
     this.addTuning(1, 'Company tunes you.');
     UI.say(e.name, line, { sub: e.job, choices: this.npcChoices(e) });
+  },
+
+  /* Dragonkeeper Sora: lore, work, and the sky itself. */
+  talkKeeper(e, first) {
+    const D = Entities.dragon;
+    const near = D && dist2D(Entities.player.x, Entities.player.z, D.x, D.z) < 30;
+    const lore = (typeof NPC_LORE !== 'undefined' && NPC_LORE.keeper) || null;
+    const c = [];
+    if (near) c.push({ text: 'Aurelia, take me up. (free)', go: () => Entities.boardDragon() });
+    else c.push({ text: 'Where is Aurelia?', go: () => UI.say(e.name, 'Out hunting, or courting the thermals. Wait by the roost — a gold shadow comes home to grain.', { sub: 'dragonkeeper', choices: this.keeperChoices(e) }) });
+    if (lore) {
+      c.push({ text: 'What do you do here?', go: () => UI.say(e.name, lore.work, { sub: 'dragonkeeper', choices: this.keeperChoices(e) }) });
+      c.push({ text: 'Heard any rumors?', go: () => UI.say(e.name, lore.rumor, { sub: 'dragonkeeper', choices: this.keeperChoices(e) }) });
+    }
+    c.push({ text: 'Goodbye.', go: () => UI.hideDialog() });
+    const bank = (typeof NPC_LINES !== 'undefined' && NPC_LINES.keeper) || ['The sky is safe to borrow.'];
+    UI.say(e.name, first ? 'You walk like someone who has never fallen from a great height. Good. Keep it that way — then climb.' : bank[(Math.random() * bank.length) | 0], {
+      sub: 'dragonkeeper', choices: c
+    });
+  },
+  keeperChoices(e) {
+    const D = Entities.dragon;
+    const near = D && dist2D(Entities.player.x, Entities.player.z, D.x, D.z) < 30;
+    const c = [];
+    if (near) c.push({ text: 'Aurelia, take me up. (free)', go: () => Entities.boardDragon() });
+    c.push({ text: 'Goodbye.', go: () => UI.hideDialog() });
+    return c;
   },
 
   talkHeroine(h) {
@@ -726,21 +809,26 @@ const Game = {
 
   /* Waystones remember every town they have touched. */
   useWaystone(from) {
+    const p0 = Entities.player;
+    if (p0.aboard || p0.riding || p0.ferry || p0.dragon) { UI.toast('The stones want your feet on the ground first.'); return; }
     const opts = SITES.filter(s => s.stone && this.visited[s.id] && s.id !== from.id);
     if (!opts.length) return UI.toast('The stones hum, but know nowhere else yet.');
     UI.say('Waystone', 'Old light runs between the stones. Name somewhere you have been.', {
       choices: opts.map(s => ({
         text: s.name,
-        go: () => {
-          const p = Entities.player;
-          p.x = s.stone.x + 6; p.z = s.stone.z + 6;
-          p.y = World.height(p.x, p.z);
-          for (const h of Entities.companions) { h.x = p.x - 2; h.z = p.z - 2; h.y = p.y; }
-          Camera3.target.set(p.x, p.y + 1.5, p.z);
-          World.update(p.x, p.z, true);
+        go: async () => {
+          await this.travelTo(s.name, s.kind, () => {
+            const p = Entities.player;
+            p.x = s.stone.x + 6; p.z = s.stone.z + 6;
+            p.y = World.height(p.x, p.z);
+            for (const h of Entities.companions) { h.x = p.x - 2; h.z = p.z - 2; h.y = p.y; }
+            Camera3.target.set(p.x, p.y + 1.5, p.z);
+            World.update(p.x, p.z, true);
+          });
           this.unlockCodex('waystones');
           UI.banner(s.name, s.kind);
           Sound.sfx('seal');
+          const p = Entities.player;
           Entities.ring(p.x, p.y, p.z, 0x9fd0ff, 4);
         }
       }))
@@ -813,7 +901,8 @@ const Game = {
 
   /* Guild writs: repeating bounties off the board. One at a time. */
   bountyBoard() {
-    const pool = Object.keys(MOBS).filter(k => !MOBS[k].boss && !MOBS[k].passive);
+    // sky-biome mounts never take writs — Aurelia is above such things
+    const pool = Object.keys(MOBS).filter(k => !MOBS[k].boss && !MOBS[k].passive && MOBS[k].biome !== 'sky');
     const offers = [];
     for (let i = 0; i < 3 && pool.length; i++) {
       const key = pool.splice((Math.random() * pool.length) | 0, 1)[0];
@@ -841,6 +930,8 @@ const Game = {
   /* Wagon yard: hire wheels to anywhere you have been. */
   hireWagon(s) {
     if (this.escort) { UI.toast('Not while walking guard.'); return; }
+    const p0 = Entities.player;
+    if (p0.aboard || p0.riding || p0.ferry || p0.dragon) { UI.toast('Step ashore first — then we roll.'); return; }
     const opts = SITES.filter(x => this.visited[x.id] && x.id !== s.id);
     if (!opts.length) return UI.toast('No roads in your head yet.');
     const kind = s.id === 'castle' ? 'war' : s.id === 'crossroads' ? 'merchant' : 'farm';
@@ -852,6 +943,32 @@ const Game = {
           if (Entities.startRide(t.id, kind)) UI.toast('Rolling to ' + t.name + '.', 'good');
         }
       }))
+    });
+  },
+
+  /* Ferry dock: board the scheduled ship across the water. */
+  takeFerry(F, dockSite) {
+    const list = (Entities.ferries || []).filter(f => {
+      if (F) return f === F;
+      if (!dockSite) return true;
+      return f.def.from === dockSite.id || f.def.to === dockSite.id;
+    });
+    if (!list.length) return UI.toast('No ferry calls here yet.');
+    if (list.length === 1 && F) return Entities.boardFerry(list[0], dockSite || null);
+    UI.say('Ferry dock', 'Scheduled ships across the water. The bell rings and the hull answers.', {
+      sub: dockSite ? dockSite.name : 'the crossing',
+      choices: list.map(f => {
+        const dest = SITES.find(s => s.id === (f.t < 0.5 ? f.def.to : f.def.from));
+        return {
+          text: `${f.def.name} → ${dest ? dest.name : '?'} — ${f.def.fare} crowns`,
+          go: () => {
+            if (this.gold < f.def.fare) return UI.toast('Not enough crowns for the fare.');
+            this.gold -= f.def.fare;
+            Entities.boardFerry(f, dockSite || null);
+            UI.refresh();
+          }
+        };
+      })
     });
   },
 
@@ -933,6 +1050,150 @@ const Game = {
     }
     Sound.sfx('back');
     UI.refresh();
+  },
+
+  /* ---------------- walk-in buildings ---------------- */
+  enterBuilding(door) {
+    if (World.mode !== 'overworld' || !door) return;
+    const p = Entities.player;
+    this.returnPoint = { x: p.x, z: p.z };
+    const B = World.enterBuilding(door);
+    if (!B) return;
+    Sound.sfx('ui');
+    UI.banner(B.title || 'Inside', B.sub || door.site);
+    UI.refresh();
+  },
+
+  leaveBuilding() {
+    World.leaveBuilding();
+    const p = Entities.player;
+    const r = this.returnPoint || { x: SITES[0].x, z: SITES[0].z };
+    // step out of the doorway, clear of the building collider
+    const spot = World.findOpenSpot(r.x, r.z, 0.7);
+    p.x = spot.x; p.z = spot.z; p.y = World.height(p.x, p.z);
+    Camera3.target.set(p.x, p.y + 1.5, p.z);
+    for (const h of Entities.companions) {
+      h.x = p.x - 2; h.z = p.z - 2;
+      h.y = World.height(h.x, h.z);
+      delete h.floorY; h.wx = null;
+    }
+    UI.refresh();
+  },
+
+  interactBuilding() {
+    const p = Entities.player, B = World.building;
+    if (!B) return;
+    const who = Entities.nearestTalkable(p.x, p.z, 3.0);
+    const wd = who ? dist2D(p.x, p.z, who.x, who.z) : 1e9;
+    let near = null, bd = 3.6;
+    for (const pr of B.props) {
+      if (pr.hidden) continue;
+      const dd = dist2D(p.x, p.z, pr.x, pr.z);
+      if (dd < bd) { bd = dd; near = pr; }
+    }
+    if (near && bd <= wd) return this.useBuildingProp(near, B);
+    if (who) return this.talk(who);
+    if (near) return this.useBuildingProp(near, B);
+    return UI.toast('Floorboards, lamplight, quiet.');
+  },
+
+  useBuildingProp(near, B) {
+    const p = Entities.player;
+    if (near.kind === 'exit') return this.leaveBuilding();
+    if (near.kind === 'bed') {
+      p.hp = p.maxhp; p.focus = p.maxfocus;
+      this.addTuning(3, 'Rest tunes you faster than anything but company.');
+      return UI.say('Rest', 'A real bed, a wool blanket, no watch rotation. You wake softer.');
+    }
+    if (near.kind === 'board') return this.bountyBoard();
+    if (near.kind === 'shop') {
+      const stock = [
+        { id: 'tonic', price: 10, text: 'Veil Tonic (10 crowns) — steadies breath, closes wounds' },
+        { id: 'draught', price: 8, text: 'Moon Draught (8 crowns) — restores focus' }
+      ];
+      return UI.say('Shopkeep', B.kind === 'alchemy' ? 'Brewed this morning. Still bubbling, that is normal.' : 'Coin first, gossip free.', {
+        sub: B.title,
+        choices: [
+          ...stock.map(o => ({
+            text: o.text,
+            go: () => {
+              if (this.gold < o.price) return UI.toast('Not enough crowns.');
+              this.gold -= o.price;
+              this.bag[o.id] = (this.bag[o.id] || 0) + 1;
+              Sound.sfx('good');
+              UI.toast('Bought: ' + ITEMS[o.id].name + '.', 'good');
+              UI.refresh();
+            }
+          })),
+          { text: 'Just looking.', go: () => UI.hideDialog() }
+        ]
+      });
+    }
+    if (near.kind === 'altar') {
+      p.hp = p.maxhp;
+      this.addTuning(5, 'Stillness tunes you.');
+      return UI.say(B.title, 'You kneel a moment. The hum holds its note, and something in you holds with it. Wounds closed, breath easy.');
+    }
+    if (near.kind === 'forge') {
+      this.forgeBuffT = 120;
+      Sound.sfx('seal');
+      Entities.ring(p.x, p.y, p.z, 0xffb054, 3);
+      return UI.say('Whetstone', 'Sparks, oil, a true edge. Your strikes bite 25% deeper for two minutes.');
+    }
+    if (near.kind === 'dummy') {
+      if (p.atkCd > 0) return;
+      p.atkCd = 0.5; p.action = 'attack'; p.actionT = 0.32;
+      Entities.ring(near.x, p.y, near.z, 0xe8e4da, 1.6);
+      Sound.sfx('hit');
+      this.grantXp(2);
+      return UI.say('Practice dummy', 'Straw shudders. Footwork, hips, follow-through — the guildmaster watching the door nods once. (+2 xp)');
+    }
+    if (near.kind === 'barkeep') {
+      return UI.say('Barkeep', 'Stew’s mostly turnip. Mostly is the best kind of stew.', {
+        sub: B.title,
+        choices: [
+          { text: 'A hot meal, please. (8 crowns)', go: () => {
+              if (this.gold < 8) return UI.say('Barkeep', 'Empty purse, full appetite. Wash dishes or come back rich.', { sub: B.title });
+              this.gold -= 8;
+              p.hp = p.maxhp; p.focus = p.maxfocus;
+              this.addTuning(3, 'Warmth tunes you.');
+              UI.say('Barkeep', 'There. Color back in the cheeks. Second cup loosens the tongue — what’s the road saying?', { sub: B.title });
+              UI.refresh();
+          } },
+          { text: 'Heard any rumors?', go: () => UI.say('Barkeep', 'A hooded one pays gold for unfinished letters down Cinder way. And that knight girl asks after you in every town. Every. Town.', { sub: B.title }) },
+          { text: 'Just resting by the fire.', go: () => UI.hideDialog() }
+        ]
+      });
+    }
+    if (near.kind === 'study') {
+      if (B._studyDone) return UI.say('Shelves', 'You have read the good shelf already. The third shelf is still biting other people.');
+      B._studyDone = true;
+      this.grantXp(6);
+      this.addTuning(2, 'Old words settle in you.');
+      Sound.sfx('good');
+      return UI.say('Study', 'An hour passes among the shelves. Veil harmonics, requisition ledgers, one love letter used as a bookmark. (+6 xp)');
+    }
+    if (near.kind === 'herbs') {
+      if (B._herbsDone) return UI.say('Herb beds', 'Only stems and good intentions left. They grow back by your next visit.');
+      B._herbsDone = true;
+      this.bag.tonic = (this.bag.tonic || 0) + 1;
+      Sound.sfx('good');
+      UI.toast('Picked: Veil Tonic greens.', 'good');
+      UI.refresh();
+      return UI.say('Herb beds', 'Moonwell mint, ember thyme. You bundle enough for one good tonic.');
+    }
+    if (near.kind === 'lecture') {
+      if (B._lectureDone) return UI.say('Lecture', 'The professor is mid-sentence about the seventh loop. You already took notes on this one.');
+      B._lectureDone = true;
+      this.grantXp(8);
+      this.addTuning(3, 'Learning tunes you.');
+      Sound.sfx('good');
+      return UI.say('Lecture', '“…and so the eighth loop proves intent.” Ninety minutes, three revelations, one splintered bench. (+8 xp)');
+    }
+    if (near.kind === 'plaque') {
+      return UI.say(near.title || 'Note', near.text || '…');
+    }
+    return UI.toast('Nothing here answers to you.');
   },
 
   interactInterior() {
@@ -1064,9 +1325,15 @@ const Game = {
     Sound.sfx('seal');
     Entities.ring(Entities.player.x, Entities.player.y, Entities.player.z, 0xbfe0ff, 7);
     const r = d.def.reward;
+    // rewards land ATOMICALLY — the dialogue below is only the announcement,
+    // so skipping it can never eat a key item like the Warden's Sigil
+    if (r.item && !this.flags['reward_' + d.def.id]) {
+      this.flags['reward_' + d.def.id] = true;
+      this.bag[r.item] = (this.bag[r.item] || 0) + 1;
+      UI.toast('Found: ' + ITEMS[r.item].name, 'good');
+    }
     UI.say('The mechanism', 'Something heavy turns over, deep in the rock, and keeps turning for longer than a door should need.', {
       then: () => {
-        if (r.item) { this.bag[r.item] = (this.bag[r.item] || 0) + 1; UI.toast('Found: ' + ITEMS[r.item].name, 'good'); }
         UI.say('', r.text, { then: () => this.checkGoal('dungeon', d.def.id) });
       }
     });
@@ -1074,8 +1341,13 @@ const Game = {
 
   /* The sealed heroine. Force fails on purpose; the seal is a held breath. */
   sealScene(d) {
-    if (d.solved) return UI.toast('She is waiting at the surface now.');
-    UI.say('???', 'Behind the light, a girl stands with her eyes open and blue blooms still fresh in her hair. She has been standing here longer than the flowers should have lasted. She sees you and she is not surprised.', {
+    if (d.solved) {
+      // repair an interrupted breaking (skipped lines, reload mid-chain):
+      // the seal stays broken and she still joins — never a dead end
+      if (!this.met.liora) { this.completeSeal(d); return; }
+      return UI.toast('She is waiting at the surface now.');
+    }
+    UI.say('???', 'Behind the light, a girl stands with her eyes open and violet blooms still fresh in her black hair. She has been standing here longer than the flowers should have lasted. She sees you and she is not surprised.', {
       look: HEROINES.find(h => h.id === 'liora').look,
       choices: [
         { text: 'Strike the seal', go: () => { Sound.sfx('bad'); UI.say('The seal', 'It drinks the blow and closes another finger\'s width. The inscription said this. You read it and did it anyway.'); } },
@@ -1099,20 +1371,37 @@ const Game = {
         sub: 'the sealed watcher', look: def.look,
         then: () => UI.say(def.realName, def.lines.deep[0] + ' ' + def.lines.deep[1], {
           sub: 'the sealed watcher', look: def.look,
-          then: () => {
-            this.met.liora = true;
-            this.knowLiora();   // she has a name now — everywhere at once
-            this.unlockCodex('sealed');
-            this.addAff('liora', 8);
-            this.secretsKnown = LORE.secrets.length;
-            const e = Entities.addHeroine(def, Entities.player.x - 2, Entities.player.z - 2);
-            e.y = -800; e.recruited = true;
-            UI.toast('Liora Vaine travels with you.', 'good');
-            this.checkGoal('dungeon', d.def.id);
-          }
+          then: () => this.completeSeal(d)
         })
       })
     });
+  },
+
+  /* Idempotent: safe to call from the cinematic, from the repair path in
+     sealScene, or after a reload — she joins exactly once, regardless. */
+  completeSeal(d) {
+    const def = HEROINES.find(h => h.id === 'liora');
+    d.solved = true;
+    this.flags['solved_' + d.def.id] = true;
+    if (!this.met.liora) {
+      this.met.liora = true;
+      this.knowLiora();   // she has a name now — everywhere at once
+      this.unlockCodex('sealed');
+      this.addAff('liora', 8);
+      this.secretsKnown = LORE.secrets.length;
+      UI.toast('Liora Vaine travels with you.', 'good');
+    }
+    const has = Entities.heroineOf && Entities.heroineOf.liora;
+    if (!has) {
+      const e = Entities.addHeroine(def, Entities.player.x - 2, Entities.player.z - 2);
+      e.y = World.mode === 'dungeon' ? -800 : e.y;
+      e.recruited = true;
+      e.command = e.command || 'follow';
+    } else if (!has.recruited) {
+      has.recruited = true;
+      has.command = has.command || 'follow';
+    }
+    this.checkGoal('dungeon', d.def.id);
   },
 
   /* The sealed girl earns her name back exactly once — and keeps it. */
@@ -1156,8 +1445,9 @@ const Game = {
   castSpell() {
     const p = Entities.player;
     if (p.atkCd > 0) return;
+    // free cast: with no target, hurl the spell at the ground ahead of you.
+    // It still costs focus and still fuses — practice on air is allowed.
     const t = Entities.nearestMob(p.x, p.z, 24);
-    if (!t) { UI.toast('No target in reach.'); return; }
     const now = performance.now() / 1000;
     let key = this.elem;
     if (this.lastCast && this.lastCast !== this.elem && now - (this.lastCastT || -99) < 3) {
@@ -1171,11 +1461,13 @@ const Game = {
     p.focus -= cost;
     this.lastCast = this.elem; this.lastCastT = now;
     p.atkCd = 0.6; p.action = 'cast'; p.actionT = 0.5;
-    p.yaw = Math.atan2(t.x - p.x, t.z - p.z);
     const dmg = Math.round(S.dmg + this.level * S.per);
+    const D = this.derived();
+    const crit = Math.random() * 100 < D.critR;
+    const cdmg = crit ? Math.round(dmg * D.critD / 100) : dmg;
     const applyFx = (m, full) => {
-      const dd = full ? dmg : Math.round(dmg / 2);
-      Entities.damageMob(m, dd, 'You');
+      const dd = full ? cdmg : Math.round(cdmg / 2);
+      Entities.damageMob(m, dd, 'You', crit);
       if (m.dead) return;
       if (S.fx.includes('burn')) { m.burnT = 3; m.burnD = 4 + this.level; Entities.burst(m.x, m.y + 1, m.z, 0xff6a2a, 8); }
       if (S.fx.includes('slow')) m.slowT = 4;
@@ -1185,10 +1477,33 @@ const Game = {
         Entities.move(m, dx / l * 3, dz / l * 3);
       }
     };
+    if (!t) {
+      // ground-target: 9 m ahead, small AoE even for single-target spells
+      const gx = p.x + Math.sin(p.yaw) * 9, gz = p.z + Math.cos(p.yaw) * 9;
+      const gy = (typeof World !== 'undefined' ? World.height(gx, gz) : p.y);
+      Entities.bolt(p.x, p.y + 1.4, p.z, gx, gy + 1, gz, S.color);
+      const radius = S.aoe || 3;
+      Entities.burst(gx, gy + 1, gz, S.color, 16);
+      Entities.ring(gx, gy, gz, S.color, radius);
+      Entities.magicCircle(gx, gy, gz, { rings: 2, runes: 10, star: null, spin: 1.8, color: S.color, r: radius, life: 0.8 });
+      for (const m of [...Entities.mobs]) {
+        if (!m.dead && dist2D(m.x, m.z, gx, gz) < radius + m.def.r) applyFx(m, true);
+      }
+      if (S.fx.includes('mend')) p.hp = Math.min(p.maxhp, p.hp + 6);
+      Sound.sfx('magic');
+      Camera3.kick(combo ? 0.22 : 0.1);
+      if (combo) UI.toast(S.name + '!', 'good');
+      UI.refresh();
+      return;
+    }
+    p.yaw = Math.atan2(t.x - p.x, t.z - p.z);
     Entities.bolt(p.x, p.y + 1.4, p.z, t.x, t.y + 1, t.z, S.color);
+    // sky-watch mark: tag a flyer and the party aims with you
+    if (t.def.fly) Game.focusTarget = t;
     if (S.aoe) {
       Entities.burst(t.x, t.y + 1, t.z, S.color, 24);
       Entities.ring(t.x, t.y, t.z, S.color, S.aoe);
+      Entities.magicCircle(t.x, t.y, t.z, { rings: 2, runes: 10, star: null, spin: 1.8, color: S.color, r: S.aoe, life: 0.8 });
       for (const m of [...Entities.mobs]) {
         if (!m.dead && dist2D(m.x, m.z, t.x, t.z) < S.aoe + m.def.r) applyFx(m, true);
       }
@@ -1223,12 +1538,22 @@ const Game = {
     const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
     const hx = p.x + fx * 1.7, hz = p.z + fz * 1.7;
     Entities.ring(hx, p.y, hz, 0xe8e4da, 1.6);
-    let hit = 0;
+    let hit = 0, critHit = false;
+    const sharp = this.forgeBuffT > 0 ? 1.25 : 1;
+    const D = this.derived();
     for (const m of Entities.mobs) {
       if (m.dead) continue;
-      if (dist2D(hx, hz, m.x, m.z) < 2.3 + m.def.r) { Entities.damageMob(m, this.derived().atk + ((Math.random() * 5) | 0), 'You'); hit++; }
+      if (dist2D(hx, hz, m.x, m.z) < 2.3 + m.def.r) {
+        let sd = Math.round((D.atk + ((Math.random() * 5) | 0)) * sharp);
+        let c = false;
+        if (Math.random() * 100 < D.critR) { sd = Math.round(sd * D.critD / 100); c = true; critHit = true; }
+        Entities.damageMob(m, sd, 'You', c);
+        // sky-watch mark: clip a flyer and the party aims with you
+        if (m.def.fly && !m.dead) Game.focusTarget = m;
+        hit++;
+      }
     }
-    if (hit) Camera3.kick(0.16);
+    if (hit) Camera3.kick(critHit ? 0.3 : 0.16);
     else Sound.sfx('ui');
   },
 
@@ -1258,18 +1583,46 @@ const Game = {
     Sound.sfx('good');
   },
 
+  /* Long crossings ride the travel veil: it paints first, the new town
+     streams in under it (World.update immediate = the real load), and the
+     veil only lifts once the ground exists. */
+  async travelTo(label, sub, apply) {
+    // one crossing at a time: overlapping veils would teleport twice
+    if (this._traveling) return;
+    this._traveling = true;
+    try {
+      TravelVeil.show(label, sub);
+      await TravelVeil.frames(3);
+      TravelVeil.setProgress(0.35);
+      await TravelVeil.frames(2);
+      apply();
+      TravelVeil.setProgress(0.9);
+      await TravelVeil.frames(2);
+      TravelVeil.setProgress(1);
+      await new Promise(r => setTimeout(r, 380));
+      TravelVeil.hide();
+    } finally {
+      this._traveling = false;
+    }
+  },
+
   fastTravel(s) {
     if (!this.visited[s.id]) return;
+    const p0 = Entities.player;
+    if (p0.aboard || p0.riding || p0.ferry || p0.dragon) { UI.toast('Step ashore first — then the map.'); return; }
     if (World.mode === 'dungeon') this.leaveDungeon();
     if (World.mode === 'interior') this.leaveKeep();
-    const p = Entities.player;
-    p.x = s.x; p.z = s.z + s.r * 0.55;
-    p.y = World.height(p.x, p.z);
-    for (const h of Entities.companions) { h.x = p.x - 2; h.z = p.z - 2; h.y = p.y; }
-    Camera3.target.set(p.x, p.y + 1.5, p.z);
-    World.update(p.x, p.z, true);
+    if (World.mode === 'building') this.leaveBuilding();
     UI.closePanel();
-    UI.banner(s.name, s.kind);
+    return this.travelTo(s.name, s.kind, () => {
+      const p = Entities.player;
+      p.x = s.x; p.z = s.z + s.r * 0.55;
+      p.y = World.height(p.x, p.z);
+      for (const h of Entities.companions) { h.x = p.x - 2; h.z = p.z - 2; h.y = p.y; }
+      Camera3.target.set(p.x, p.y + 1.5, p.z);
+      World.update(p.x, p.z, true);
+      UI.banner(s.name, s.kind);
+    });
   },
 
   /* ---------------- saves ---------------- */
@@ -1282,8 +1635,21 @@ const Game = {
   save(i) {
     const p = Entities.player;
     // saving inside a dungeon/keep records the door you came through instead
-    const qx = (World.mode !== 'overworld' && this.returnPoint) ? this.returnPoint.x : p.x;
-    const qz = (World.mode !== 'overworld' && this.returnPoint) ? this.returnPoint.z : p.z;
+    let qx = (World.mode !== 'overworld' && this.returnPoint) ? this.returnPoint.x : p.x;
+    let qz = (World.mode !== 'overworld' && this.returnPoint) ? this.returnPoint.z : p.z;
+    // saving mid-voyage beaches the record: reload on the nearest shore,
+    // never mid-water staring at a ferry that already sailed on
+    if (p.ferry && World.mode === 'overworld') {
+      const F = p.ferry;
+      for (let r = 4; r <= 60 && qx === p.x; r += 4) {
+        for (let k = 0; k < 10; k++) {
+          const a = (k / 10) * TAU;
+          const x = F.x + Math.cos(a) * r, z = F.z + Math.sin(a) * r;
+          if (Math.abs(x) > EXTENT || Math.abs(z) > EXTENT) continue;
+          if (World.height(x, z) > SEA + 0.4 && !World.blocked(x, z, 0.6)) { qx = x; qz = z; break; }
+        }
+      }
+    }
     const s = SITES.reduce((a, b) => dist2D(qx, qz, b.x, b.z) < dist2D(qx, qz, a.x, a.z) ? b : a);
     const near = dist2D(qx, qz, s.x, s.z) < s.r + 120 ? s.name : 'the open road';
     Store.set(this.slotKey(i), {
@@ -1299,18 +1665,29 @@ const Game = {
       x: qx, z: qz, hp: p.hp,
       aboard: !!p.aboard,
       ship: Entities.ship ? { x: Entities.ship.x, z: Entities.ship.z, yaw: Entities.ship.yaw } : null,
-      party: Entities.companions.map(h => ({ id: h.id, cmd: h.command }))
+      party: Entities.companions.map(h => ({ id: h.id, cmd: h.command })),
+      heroines: Entities.npcs.filter(n => n.type === 'heroine').map(h => ({ id: h.id, lvl: h.lvl || 1, xp: h.xp || 0, skills: h.skills || [] }))
     });
     Sound.sfx('good');
   },
   load(i) {
     const d = Store.get(this.slotKey(i), null);
     if (!d) return false;
+    // a record always wakes in the open world: step out of any room,
+    // dungeon or helm first or the world renders the wrong layer
+    if (World.mode === 'dungeon') this.leaveDungeon();
+    if (World.mode === 'interior') this.leaveKeep();
+    if (World.mode === 'building') this.leaveBuilding();
     Object.assign(this, {
-      playerName: d.playerName, level: d.level, xp: d.xp, gold: d.gold, tuning: d.tuning,
-      base: d.base, equip: d.equip, bag: d.bag, aff: d.aff, met: d.met, visited: d.visited,
-      flags: d.flags, doneQuests: d.doneQuests, questIndex: d.questIndex, kills: d.kills,
-      killMark: d.killMark, talkedTo: d.talkedTo, secretsKnown: d.secretsKnown || 0
+      playerName: d.playerName || null, level: d.level || 1, xp: d.xp || 0,
+      gold: d.gold || 0, tuning: d.tuning != null ? d.tuning : 8,
+      base: d.base || { STR: 4, VIT: 4, AGI: 4 },
+      equip: d.equip || { weapon: null, armor: null, charm: null },
+      bag: d.bag || {}, aff: d.aff || {}, met: d.met || {},
+      visited: d.visited || { castle: true }, flags: d.flags || {},
+      doneQuests: d.doneQuests || {}, questIndex: d.questIndex || 0,
+      kills: d.kills || 0, killMark: d.killMark || 0,
+      talkedTo: d.talkedTo || {}, secretsKnown: d.secretsKnown || 0
     });
     this.rep = Object.assign({ rose: 0, wardens: 0, archive: 0, choir: 0 }, d.rep);
     this.codex = d.codex || {};
@@ -1321,7 +1698,7 @@ const Game = {
     p.name = d.playerName || 'You';
     this.applyStats(false);
     p.hp = clamp(d.hp, 1, p.maxhp);
-    Entities.npcs.forEach(n => { if (n.type === 'heroine') n.recruited = false; });
+    Entities.npcs.forEach(n => { if (n.type === 'heroine') { n.recruited = false; n.casting = null; n.windup = null; } });
     // the freed arrive too: a sealed heroine you met must exist to rejoin
     for (const def of HEROINES) {
       if (!def.sealed || !this.met[def.id]) continue;
@@ -1341,6 +1718,15 @@ const Game = {
       const h = Entities.heroineOf[rec.id];
       if (h) { h.recruited = true; h.command = rec.cmd || 'follow'; }
     });
+    // heroine levels / skills survive reloads
+    (d.heroines || []).forEach(rec => {
+      const h = Entities.heroineOf[rec.id];
+      if (h) {
+        h.lvl = rec.lvl || 1; h.xp = rec.xp || 0; h.skills = rec.skills || [];
+        h.maxhp = 120 + (h.lvl - 1) * 22; h.hp = Math.min(h.maxhp, h.hp || h.maxhp);
+        h.maxfocus = 60 + (h.lvl - 1) * 6;
+      }
+    });
     if (this.flags.leftCastle && SITES[0].ward) SITES[0].ward.visible = false;
     // restore the ship; wake aboard if saved at the helm
     if (d.ship && Entities.ship) {
@@ -1350,6 +1736,7 @@ const Game = {
     }
     Entities.endRide(true);   // wagons never survive a reload
     this.escort = null;
+    p.ferry = null; p.aboardFerry = false; p.dragon = false;   // nor do ferry decks
     p.aboard = !!d.aboard && !!d.ship;
     if (p.aboard) {
       const helm = Entities.shipSeat(0);
@@ -1388,6 +1775,15 @@ const Game = {
   },
 
   newGame() {
+    if (World.mode === 'dungeon') this.leaveDungeon();
+    if (World.mode === 'interior') this.leaveKeep();
+    if (World.mode === 'building') this.leaveBuilding();
+    // fresh loops start on foot: no helm, wagon, ferry or dragon survives
+    try {
+      const p0 = Entities.player;
+      if (p0) { p0.aboard = false; p0.riding = false; p0.ferry = null; p0.aboardFerry = false; p0.dragon = false; }
+      Entities.endRide(true);
+    } catch {}
     Object.assign(this, {
       level: 1, xp: 0, gold: 60, tuning: 8, secretsKnown: 0,
       lastCast: null, lastCastT: 0,
@@ -1401,7 +1797,7 @@ const Game = {
     });
     HEROINES.forEach(h => { this.aff[h.id] = 0; this.met[h.id] = false; });
     this.forgetLiora();   // a new loop seals her name again
-    Entities.npcs.forEach(n => { if (n.type === 'heroine') n.recruited = false; });
+    Entities.npcs.forEach(n => { if (n.type === 'heroine') { n.recruited = false; n.casting = null; n.windup = null; } });
     const p = Entities.player;
     const c = SITES[0];
     const sp = World.findOpenSpot(c.x, c.z + c.r * 0.42, 0.7);
@@ -1412,7 +1808,19 @@ const Game = {
   },
 
   tick(dt) {
-    // session repair: a freed Liora with a lost flag rejoins on her own
+    // whetstone edge burns down
+    if (this.forgeBuffT > 0) this.forgeBuffT = Math.max(0, this.forgeBuffT - dt);
+    // safety net: nobody stays in the void — if you are somehow outside
+    // the room walls (old leak, shove, reunion teleport), step outside
+    if (World.mode === 'building' && typeof BINT !== 'undefined') {
+      const p0 = Entities.player;
+      const BW = (World.building && World.building.W) || BINT.w;
+      const BD = (World.building && World.building.D) || BINT.d;
+      if (Math.abs(p0.x - BINT.x) > BW + 2.5 || Math.abs(p0.z - BINT.z) > BD + 2.5) {
+        this.leaveBuilding();
+        return;
+      }
+    }    // session repair: a freed Liora with a lost flag rejoins on her own
     if (this.met.liora && !this._lioraFixed) {
       this._lioraFixed = true;
       const h = Entities.heroineOf && Entities.heroineOf.liora;
@@ -1430,7 +1838,8 @@ const Game = {
     }
     // discovery
     const p = Entities.player;
-    if (Input.context === 'play') this.tickEscort(dt);
+    // escorts wait while you are indoors — ducking into a shop never fails them
+    if (Input.context === 'play' && World.mode === 'overworld') this.tickEscort(dt);
     // dungeon seals light up once their clue is known
     for (const d of DUNGEONS) if (d.marker) d.marker.visible = !!this.flags[d.clue];
     // the ward hall: walking to the dais completes q0_walk (it had no trigger)
@@ -1449,6 +1858,14 @@ const Game = {
       }
       // quest progress must trigger even if visited before the quest started
       if (inside) this.checkGoal('site', s.id);
+    }
+    // dragonroost rumor: first time under her shadow, Sora's invitation
+    if (Entities.roost && !this.flags.roost && World.mode === 'overworld') {
+      if (dist2D(p.x, p.z, Entities.roost.x, Entities.roost.z) < 220) {
+        this.flags.roost = true;
+        UI.toast('Dragonroost below — keeper Sora waves you toward a gold shadow.', 'good');
+        Sound.sfx('good');
+      }
     }
     // clue pickups at ruins and shrines (quest check runs even if read early)
     if (dist2D(p.x, p.z, -1900, 900) < 60) {
@@ -1619,6 +2036,114 @@ const LoadFX = {
 };
 
 /* =====================================================================
+   TRAVEL VEIL — the town-to-town loading screen.
+   The Eighth Loop sigil (seven gold loops + one crimson) turns while the
+   destination streams in; the bar eases toward staged progress and the
+   veil only lifts once the new ground is actually built.
+   ===================================================================== */
+const TravelVeil = {
+  el: null, cv: null, ctx: null, raf: 0, last: 0, t: 0,
+  target: 0, shown: 0, motes: [], _gen: 0,
+  TIPS: [
+    'The veil parts for those it has learned.',
+    'Hold your breath out. The stones do the rest.',
+    'Every road in Avelune remembers your feet.',
+    'Say “later” to the town behind you.',
+    'The eighth loop was drawn for exactly this.',
+    'Count the loops as you cross. There are eight.'
+  ],
+  show(dest, sub) {
+    this.el = this.el || $('veil');
+    if (!this.el) return;
+    this._gen++;
+    cancelAnimationFrame(this.raf);
+    $('veil-dest').textContent = dest || 'Crossing the Veil';
+    $('veil-sub').textContent = sub || '';
+    $('veil-tip').textContent = this.TIPS[(Math.random() * this.TIPS.length) | 0];
+    this.el.classList.remove('off');
+    this.cv = this.cv || $('veil-sigil');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.cv.width = 240 * dpr; this.cv.height = 240 * dpr;
+    this.ctx = this.cv.getContext('2d');
+    this._dpr = dpr;
+    this.target = 0.05; this.shown = 0; this.t = 0;
+    this.motes = [];
+    for (let i = 0; i < 34; i++) {
+      this.motes.push({
+        x: Math.random(), y: Math.random(),
+        v: 0.02 + Math.random() * 0.06,
+        r: (0.8 + Math.random() * 1.8) * dpr,
+        tw: Math.random() * TAU
+      });
+    }
+    this.last = performance.now();
+    const frame = now => {
+      this.raf = requestAnimationFrame(frame);
+      let dt = (now - this.last) / 1000; this.last = now;
+      if (dt > 0.1) dt = 0.1;
+      this.draw(dt);
+    };
+    this.raf = requestAnimationFrame(frame);
+  },
+  setProgress(f) { this.target = clamp(f, 0, 1); },
+  frames(n) {
+    return new Promise(res => {
+      const step = () => { if (n-- <= 0) res(); else requestAnimationFrame(step); };
+      requestAnimationFrame(step);
+    });
+  },
+  hide() {
+    if (!this.el) return;
+    const gen = this._gen;
+    this.target = 1;
+    this.el.classList.add('off');
+    setTimeout(() => { if (gen === this._gen) cancelAnimationFrame(this.raf); }, 650);
+  },
+  draw(dt) {
+    const g = this.ctx;
+    if (!g) return;
+    this.t += dt;
+    this.shown += (this.target - this.shown) * Math.min(1, dt * 3.2);
+    const S = this.cv.width, r = S / 2, dpr = this._dpr || 1;
+    const R = S * 0.36;
+    g.clearRect(0, 0, S, S);
+    // rising motes
+    for (const m of this.motes) {
+      m.y -= m.v * dt; m.tw += dt * 2;
+      if (m.y < -0.03) { m.y = 1.03; m.x = Math.random(); }
+      g.fillStyle = `rgba(232,220,190,${0.25 + Math.sin(m.tw) * 0.2})`;
+      g.beginPath(); g.arc(m.x * S, m.y * S, m.r, 0, TAU); g.fill();
+    }
+    // the eight loops: seven gold, the last one crimson
+    for (let k = 0; k < 8; k++) {
+      const a0 = this.t * 0.5 + k * TAU / 8;
+      const eighth = k === 7;
+      g.strokeStyle = eighth
+        ? `rgba(220,40,80,${0.75 + Math.sin(this.t * 3) * 0.2})`
+        : 'rgba(216,193,138,.55)';
+      g.lineWidth = (eighth ? 3 : 1.5) * dpr;
+      g.beginPath();
+      g.arc(r, r, R, a0, a0 + TAU / 8 * 0.62);
+      g.stroke();
+    }
+    // progress sweep + heart diamond
+    g.strokeStyle = 'rgba(190,220,255,.9)';
+    g.lineWidth = 2 * dpr;
+    g.beginPath();
+    g.arc(r, r, R - 14 * dpr, -Math.PI / 2, -Math.PI / 2 + this.shown * TAU);
+    g.stroke();
+    g.save();
+    g.translate(r, r); g.rotate(Math.PI / 4);
+    g.fillStyle = '#d8c18a';
+    const d = 5 * dpr + this.shown * 2 * dpr;
+    g.fillRect(-d / 2, -d / 2, d, d);
+    g.restore();
+    const fill = $('veil-fill');
+    if (fill) fill.style.width = Math.round(this.shown * 100) + '%';
+  }
+};
+
+/* =====================================================================
    BOOT
    ===================================================================== */
 const App = {
@@ -1644,7 +2169,7 @@ const App = {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
-    this.cam = new THREE.PerspectiveCamera(58, 1, 0.1, 1600);
+    this.cam = new THREE.PerspectiveCamera(58, 1, 0.35, 1600);
     Camera3.init(this.cam);
     Input.init(canvas);
     UI.init();
@@ -1657,6 +2182,10 @@ const App = {
     // queue the home chunks instead of building them all at once — the big
     // synchronous build is what froze the loading animation dead
     World.update(Entities.player.x, Entities.player.z);
+    // chart the realm once, up front: the minimap blits from this cache,
+    // so building it here means no hitch on its first frame in play
+    try { UI.renderMapCache(); } catch {}
+    fill(0.6);
 
     // quest beacon: a soft pillar of light over the current objective
     this.beacon = new THREE.Mesh(
@@ -1793,6 +2322,8 @@ const App = {
   updatePrompt() {
     if (Input.context !== 'play') return UI.prompt(null);
     const p = Entities.player;
+    if (p.ferry) return UI.prompt('<kbd>E</kbd> step ashore');
+    if (p.dragon) return UI.prompt('<kbd>E</kbd> land the dragon');
     if (p.aboard) {
       const mate = Entities.nearestTalkable(p.x, p.z, 2.2);
       if (mate) return UI.prompt(`<kbd>E</kbd> speak with <b>${mate.type === 'heroine' ? mate.def.name : mate.name}</b>`);
@@ -1822,6 +2353,23 @@ const App = {
         if (pr.hidden) continue;
         if (dist2D(p.x, p.z, pr.x, pr.z) < 4.2) return UI.prompt(`<kbd>E</kbd> ${pr.label}`);
       }
+      return UI.prompt(null);
+    }
+    if (World.mode === 'building') {
+      const B = World.building;
+      const who2 = Entities.nearestTalkable(p.x, p.z, 3.0);
+      const wd2 = who2 ? dist2D(p.x, p.z, who2.x, who2.z) : 1e9;
+      let near2 = null, bd2 = 3.6;
+      if (B) {
+        for (const pr of B.props) {
+          if (pr.hidden) continue;
+          const dd2 = dist2D(p.x, p.z, pr.x, pr.z);
+          if (dd2 < bd2) { bd2 = dd2; near2 = pr; }
+        }
+      }
+      if (near2 && bd2 <= wd2) return UI.prompt(`<kbd>E</kbd> ${near2.label}`);
+      if (who2) return UI.prompt(`<kbd>E</kbd> speak with <b>${who2.type === 'heroine' ? who2.def.name : who2.name}</b>`);
+      if (near2) return UI.prompt(`<kbd>E</kbd> ${near2.label}`);
       return UI.prompt(null);
     }
     const who = Entities.nearestTalkable(p.x, p.z, 3.8);
@@ -1859,6 +2407,14 @@ const App = {
       if (q < sgDist) { sgDist = q; sg = s; }
     }
     if (shipReady && sd < 7 && sd <= wd && sd <= kd && sd <= gd && sd <= ddDist) return UI.prompt('<kbd>E</kbd> board <b>the ship</b>');
+    if (Entities.ferries && Entities.ferries.length) {
+      for (const F of Entities.ferries) {
+        if (dist2D(p.x, p.z, F.x, F.z) < 10) return UI.prompt(`<kbd>E</kbd> board <b>${F.def.name}</b>`);
+      }
+      for (const s of SITES) {
+        if (s.dock && dist2D(p.x, p.z, s.dock.x, s.dock.z) < 6) return UI.prompt('<kbd>E</kbd> ring the <b>ferry bell</b>');
+      }
+    }
     if (st && stDist < 6 && stDist <= wd) return UI.prompt('<kbd>E</kbd> touch the <b>waystone</b>');
     if (!upHigh && World.skyGate && gateD < 5 && gateD <= wd) return UI.prompt('<kbd>E</kbd> step into the <b>sky-gate</b>');
     if (upHigh && padIdx >= 0 && padD < 7) return UI.prompt('<kbd>E</kbd> use the <b>waypad</b>');
@@ -1879,16 +2435,37 @@ const App = {
     if (bd && bdDist < 5 && bdDist <= wd) return UI.prompt('<kbd>E</kbd> read the <b>guild writs</b>');
     if (wg && wgDist < 5 && wgDist <= wd) return UI.prompt('<kbd>E</kbd> hire a <b>wagon</b>');
     if (p.riding) return UI.prompt('<kbd>E</kbd> stop the wagons');
+    if (World.doors) {
+      let door = null, doorD = 4.5;
+      for (const dr of World.doors) {
+        const q = dist2D(p.x, p.z, dr.x, dr.z);
+        if (q < doorD) { doorD = q; door = dr; }
+      }
+      if (door && doorD <= wd) {
+        const nm = (typeof BUILDING_INFO !== 'undefined' && BUILDING_INFO[door.kind]) ? BUILDING_INFO[door.kind].title : door.kind;
+        return UI.prompt(`<kbd>E</kbd> enter the <b>${nm}</b>`);
+      }
+    }
     if (kd < 10 && kd <= wd && kd <= gd && kd <= ddDist) return UI.prompt('<kbd>E</kbd> enter <b>the keep</b>');
     if (gd < 9 && gd <= wd && gd <= ddDist) return UI.prompt('<kbd>E</kbd> approach the ward');
     if (dd && ddDist < 8 && ddDist <= wd) return UI.prompt(`<kbd>E</kbd> ${Game.flags[dd.clue] ? `descend into <b>${dd.name}</b>` : `inspect the sealed stones`}`);
+    if (Entities.dragon && !p.dragon) {
+      const drd = dist2D(p.x, p.z, Entities.dragon.x, Entities.dragon.z);
+      if (drd < 9 && drd <= wd) return UI.prompt('<kbd>E</kbd> board <b>Aurelia</b>');
+    }
     if (who) return UI.prompt(`<kbd>E</kbd> speak with <b>${who.type === 'heroine' ? (Game.met[who.id] ? who.def.name : 'someone') : who.name}</b>`);
     UI.prompt(null);
   },
 
   keys() {
     if (Input.consume('menu')) {
-      if (!$('dlg').classList.contains('off')) UI.hideDialog();
+      // Esc on story text runs it forward (advance fires the chained quest
+      // triggers); Esc on a choice menu cancels the menu. Never silently
+      // drop a dialogue chain — that soft-locked quests.
+      if (!$('dlg').classList.contains('off')) {
+        if (UI.dlgLocked) UI.hideDialog();
+        else UI.advance();
+      }
       else if (UI.cmdOpen) UI.toggleCommand(false);
       else if (UI.activeTab) UI.closePanel();
       else UI.toggleRing();
@@ -1908,6 +2485,7 @@ const App = {
     if (Input.consume('earth')) Game.setElement('earth');
     if (Input.consume('lightning')) Game.setElement('lightning');
     if (Input.consume('horn')) Game.summonShip();
+    if (Input.consume('pov') && typeof Camera3 !== 'undefined' && Camera3.togglePov) Camera3.togglePov();
     if (Input.consume('command')) UI.toggleCommand();
     if (Input.consume('map')) UI.openPanel('map');
     if (Input.consume('quests')) UI.openPanel('quests');
@@ -1924,6 +2502,15 @@ const App = {
         this.scene.fog.near = 2; this.scene.fog.far = 70;
         this.scene.background.setHex(0x0a2e4a);
       } else if (!foggy) { this.scene.fog.near = 260; this.scene.fog.far = 900; }
+    }
+    // adaptive resolution: weak hardware sheds pixels before it sheds frames
+    this._qT = (this._qT || 0) + dt;
+    if (this._qT > 2) {
+      this._qT = 0;
+      const cap = Math.min(1.75, window.devicePixelRatio || 1);
+      const pr = this.renderer.getPixelRatio();
+      if (Loop.fps < 24 && pr > 1) this.renderer.setPixelRatio(Math.max(1, pr - 0.25));
+      else if (Loop.fps > 55 && pr < cap) this.renderer.setPixelRatio(Math.min(cap, pr + 0.25));
     }
     this.renderer.render(this.scene, this.cam);
     Preview.tick(dt);

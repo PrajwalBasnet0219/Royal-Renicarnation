@@ -247,12 +247,12 @@ const HEROINES = [
     race: 'Human', age: 23, arche: 'Kuudere', combat: 'mage',
     home: 'castle', metAt: 'castle',
     look: {
-      hair: 0x1a1420, hair2: 0x0d0a12, eye: 0x9a5fe0, skin: 0xf7e0cd,
-      style: 'straight', length: 1.15, accent: 'violet-moth', lip: 0x9a6a7a, bust: 0.9, waist: 0.86, hip: 0.95,
-      dressA: 0x171223, dressB: 0x4b2a75, trim: 0x9a5fe0, metal: 0xd6c08a,
-      silhouette: 'mage-robe', cape: 'full', capeColor: 0x3c2258, height: 1.0
+      hair: 0x8f9a9e, hair2: 0x39444a, eye: 0x1fa89a, skin: 0xf7e0cd,
+      style: 'straight', length: 1.15, accent: 'frost-lily', lip: 0xa86a76, bust: 0.9, waist: 0.86, hip: 0.95,
+      dressA: 0x0e2028, dressB: 0x2a6f78, trim: 0x7ad8c8, metal: 0xc8d4d8,
+      silhouette: 'mage-robe', cape: 'full', capeColor: 0x12333b, height: 1.0
     },
-    blurb: 'Black hair, violet eyes, the only person at court who wrote down what the circle actually did. She files you as an anomaly and then keeps checking the file.',
+    blurb: 'Ash-silver hair, teal eyes, the only person at court who wrote down what the circle actually did. She files you as an anomaly and then keeps checking the file.',
     likes: 'precision', dislikes: 'being told to relax',
     cold: 'That input is premature. Collect more data — walk with me, talk with me — and resubmit the hypothesis later.',
     lines: {
@@ -315,12 +315,12 @@ const HEROINES = [
     race: 'Elf', age: 22, arche: 'Gentle scholar', combat: 'healer',
     home: 'prismere', metAt: 'prismere',
     look: {
-      hair: 0xdfe8fa, hair2: 0x9fb4d8, eye: 0x5f8fd8, skin: 0xfbe6d6,
+      hair: 0xe8c86a, hair2: 0xa87830, eye: 0x5f8fd8, skin: 0xfbe6d6,
       style: 'braid', length: 1.12, accent: 'frost-lily', lip: 0xd08a90, bust: 1.06, waist: 0.94, hip: 1.09,
       dressA: 0xf7fbff, dressB: 0xbcd6f5, trim: 0x2f6bc0, metal: 0xe0d2a4,
-      silhouette: 'a-line', cape: 'half', capeColor: 0xd6e6fa, ears: 'elf', height: 0.99
+      silhouette: 'a-line', cape: 'none', capeColor: 0xd6e6fa, ears: 'elf', height: 0.99
     },
-    blurb: 'Silver-blue hair, long ears, an archive she is not supposed to open. Proves the summoning was aimed rather than accidental.',
+    blurb: 'Honey-blonde hair, long ears, an archive she is not supposed to open. Proves the summoning was aimed rather than accidental.',
     likes: 'questions asked properly', dislikes: 'loud rooms',
     cold: 'Oh — oh. Give me a little longer, please? I want to be brave on purpose, not by accident, when you say things like that.',
     lines: {
@@ -451,12 +451,12 @@ const HEROINES = [
     race: 'Unknown', age: 22, arche: 'Devoted', combat: 'ward', sealed: true,
     home: 'tarn', metAt: 'tarn-depths',
     look: {
-      hair: 0xf2f4fb, hair2: 0xb9c4dc, eye: 0x6fa0e8, skin: 0xfbe8da,
-      style: 'bloom', length: 1.18, accent: 'blue-bloom', lip: 0xc98a94, bust: 1.0, waist: 0.9, hip: 1.04,
-      dressA: 0xf9fbff, dressB: 0xc9dcf7, trim: 0x4a7fd0, metal: 0xe4d6a8,
-      silhouette: 'mermaid', cape: 'none', capeColor: 0xe6eefb, height: 0.99
+      hair: 0x23202e, hair2: 0x4a3a5e, eye: 0x6fa0e8, skin: 0xfbe8da,
+      style: 'veil', length: 1.18, accent: 'moth-bloom', lip: 0xc98a94, bust: 1.0, waist: 0.9, hip: 1.04,
+      dressA: 0x2a1a3e, dressB: 0x5a3a8a, trim: 0x9a5fe0, metal: 0xe4d6a8,
+      silhouette: 'mermaid', cape: 'none', capeColor: 0x2a1a3a, height: 0.99
     },
-    blurb: 'Behind the last seal under Veilmoon Tarn, a girl stands with blue blooms in her hair and her eyes open. She has watched the road you would arrive on for eleven years.',
+    blurb: 'Behind the last seal under Veilmoon Tarn, a girl stands with violet blooms in her black hair and her eyes open. She has watched the road you would arrive on for eleven years.',
     likes: 'being finally looked at', dislikes: 'the word "wait"',
     cold: 'You are kind, and I am still learning how to be a person instead of a vigil. Walk with me a while longer first.',
     lines: {
@@ -532,23 +532,69 @@ const BIOMES = {
 const MOBS = {
   huskhound:  { name: 'Husk Hound',    biome: 'meadow',  hp: 34,  atk: 6,  spd: 5.2, xp: 16, r: 0.8, color: 0x6b5a4a, shape: 'quad' },
   brierling:  { name: 'Brierling',     biome: 'meadow',  hp: 24,  atk: 4,  spd: 3.4, xp: 12, r: 0.7, color: 0x5d7a46, shape: 'blob' },
+  gloomfly:    { name: 'Gloomfly',      biome: 'meadow',  hp: 30,  atk: 7,  spd: 6.4, xp: 22, r: 0.7, color: 0x9ae86a, shape: 'wraith', fly: true, ranged: true },
+  brassbeetle: { name: 'Brassbeetle',   biome: 'meadow',  hp: 85,  atk: 12, spd: 2.6, xp: 40, r: 1.1, color: 0xb08a3a, shape: 'quad' },
+  duskhare:    { name: 'Duskhare',      biome: 'meadow',  hp: 8,   atk: 0,  spd: 6.2, xp: 6,  r: 0.35, color: 0x8a7a8a, shape: 'quad', passive: true, critter: true },
+  honeymole:   { name: 'Honeymole',     biome: 'meadow',  hp: 14,  atk: 0,  spd: 3.8, xp: 8,  r: 0.4, color: 0xc8a05a, shape: 'quad', passive: true, critter: true },
+  skyswift:    { name: 'Skyswift',      biome: 'meadow',  hp: 26,  atk: 6,  spd: 7.4, xp: 18, r: 0.55, color: 0x7ab8d8, shape: 'bird', fly: true },
   barkstalker:{ name: 'Bark Stalker',  biome: 'forest',  hp: 58,  atk: 10, spd: 4.4, xp: 30, r: 1.1, color: 0x4a3a28, shape: 'tall' },
   mothwraith: { name: 'Moth Wraith',   biome: 'forest',  hp: 40,  atk: 8,  spd: 6.0, xp: 26, r: 0.9, color: 0x8a7ea8, shape: 'wraith', fly: true },
+  sporepuff:   { name: 'Sporepuff',     biome: 'forest',  hp: 55,  atk: 11, spd: 2.6, xp: 34, r: 1.0, color: 0x7ac86a, shape: 'blob', ranged: true },
+  canopylurker:{ name: 'Canopy Lurker', biome: 'forest',  hp: 75,  atk: 14, spd: 5.0, xp: 44, r: 1.0, color: 0x3a5a3a, shape: 'tall' },
+  fernfox:     { name: 'Fernfox',       biome: 'forest',  hp: 16,  atk: 0,  spd: 5.8, xp: 9,  r: 0.5, color: 0xb06a3a, shape: 'quad', passive: true, critter: true },
+  mistdoe:     { name: 'Mistdoe',       biome: 'forest',  hp: 22,  atk: 0,  spd: 5.2, xp: 11, r: 0.65, color: 0xc8d0d8, shape: 'quad', passive: true, critter: true },
+  owlet:       { name: 'Owlet',         biome: 'forest',  hp: 12,  atk: 0,  spd: 5.5, xp: 8,  r: 0.45, color: 0x9a8a6a, shape: 'bird', fly: true, passive: true, critter: true },
+  thornspirit:{ name: 'Thorn Spirit',  biome: 'forest',  hp: 60,  atk: 13, spd: 4.2, xp: 42, r: 1.0, color: 0x4a8a3a, shape: 'wraith', eye: 0x6ae86a },
+  aureatestag:{ name: 'Aureate Stag',  biome: 'forest',  hp: 30,  atk: 0,  spd: 6.0, xp: 25, r: 0.8, color: 0xe8d8a8, shape: 'quad', passive: true, critter: true, eye: 0x8a5a1a },
   thicketboar:{ name: 'Thicket Boar',  biome: 'forest',  hp: 70,  atk: 12, spd: 5.6, xp: 34, r: 1.0, color: 0x53412e, shape: 'quad' },
   stonegnaw:  { name: 'Stone Gnaw',    biome: 'mountain',hp: 88,  atk: 14, spd: 3.2, xp: 44, r: 1.2, color: 0x77777f, shape: 'blob' },
   frostkite:  { name: 'Frost Kite',    biome: 'mountain',hp: 46,  atk: 11, spd: 7.0, xp: 38, r: 0.9, color: 0xa8c4d8, shape: 'wraith', fly: true },
   emberdrake: { name: 'Ember Drake',   biome: 'volcano', hp: 130, atk: 20, spd: 5.0, xp: 80, r: 1.5, color: 0xa8352a, shape: 'drake', ranged: true },
   cinderimp:  { name: 'Cinder Imp',    biome: 'volcano', hp: 52,  atk: 13, spd: 6.4, xp: 40, r: 0.8, color: 0xd2562e, shape: 'tall' },
   magmacrawl: { name: 'Magma Crawler', biome: 'volcano', hp: 110, atk: 17, spd: 2.8, xp: 62, r: 1.3, color: 0x7a2a18, shape: 'blob' },
+  slagfiend:   { name: 'Slagfiend',     biome: 'volcano', hp: 100, atk: 16, spd: 4.2, xp: 58, r: 1.2, color: 0x5a2a1a, shape: 'tall' },
+  cinderwisp:  { name: 'Cinderwisp',    biome: 'volcano', hp: 42,  atk: 12, spd: 6.8, xp: 36, r: 0.7, color: 0xff8a3a, shape: 'wraith', fly: true, ranged: true },
+  ashmole:     { name: 'Ashmole',       biome: 'volcano', hp: 12,  atk: 0,  spd: 3.6, xp: 7,  r: 0.35, color: 0x5a5550, shape: 'quad', passive: true, critter: true },
+  cindernewt: { name: 'Cindernewt',    biome: 'volcano', hp: 10,  atk: 0,  spd: 4.2, xp: 7,  r: 0.4, color: 0xd86a2a, shape: 'blob', passive: true, critter: true },
+  emberspirit:{ name: 'Ember Spirit',  biome: 'volcano', hp: 62,  atk: 15, spd: 5.4, xp: 46, r: 1.0, color: 0xe85a1a, shape: 'wraith', fly: true, ranged: true, eye: 0xffd27a },
   mireleech:  { name: 'Mire Leech',    biome: 'marsh',   hp: 64,  atk: 12, spd: 4.0, xp: 36, r: 1.0, color: 0x46523c, shape: 'blob' },
   bogshade:   { name: 'Bog Shade',     biome: 'marsh',   hp: 56,  atk: 14, spd: 5.4, xp: 42, r: 0.9, color: 0x2e3830, shape: 'wraith' },
+  lanternhulk:{ name: 'Lantern Hulk',  biome: 'marsh',   hp: 95,  atk: 15, spd: 3.0, xp: 52, r: 1.3, color: 0x4a6a5a, shape: 'tall', ranged: true },
+  mudlark:     { name: 'Mudlark',       biome: 'marsh',   hp: 34,  atk: 8,  spd: 6.8, xp: 24, r: 0.7, color: 0x6a5a3a, shape: 'bird', fly: true },
+  reedfrog:    { name: 'Reedfrog',      biome: 'marsh',   hp: 10,  atk: 0,  spd: 4.6, xp: 6,  r: 0.45, color: 0x5a8a3a, shape: 'blob', passive: true, critter: true },
+  mudhopper:  { name: 'Mudhopper',     biome: 'marsh',   hp: 12,  atk: 0,  spd: 5.2, xp: 7,  r: 0.35, color: 0x7a6a4a, shape: 'quad', passive: true, critter: true },
+  miredrake:  { name: 'Mire Drake',    biome: 'marsh',   hp: 150, atk: 20, spd: 4.4, xp: 95, r: 1.7, color: 0x5a4a22, shape: 'drake', eye: 0xe8a83a },
   gullwraith: { name: 'Gull Wraith',   biome: 'shore',   hp: 38,  atk: 9,  spd: 6.6, xp: 28, r: 0.8, color: 0xc8cdd8, shape: 'wraith', fly: true },
   tidehusk:   { name: 'Tide Husk',     biome: 'shore',   hp: 60,  atk: 11, spd: 4.2, xp: 32, r: 1.0, color: 0x6a7f8a, shape: 'tall' },
+  brineknight:{ name: 'Brine Knight',  biome: 'shore',   hp: 80,  atk: 14, spd: 4.0, xp: 46, r: 1.1, color: 0x3a7a8a, shape: 'tall' },
+  foamcaller:  { name: 'Foamcaller',    biome: 'shore',   hp: 50,  atk: 12, spd: 5.8, xp: 38, r: 0.9, color: 0xbfe8f0, shape: 'wraith', fly: true, ranged: true },
+  sandpiper:   { name: 'Sandpiper',     biome: 'shore',   hp: 10,  atk: 0,  spd: 6.0, xp: 7,  r: 0.45, color: 0xd8c8a8, shape: 'bird', fly: true, passive: true, critter: true },
+  tidecrab:    { name: 'Tidecrab',      biome: 'shore',   hp: 16,  atk: 0,  spd: 3.2, xp: 8,  r: 0.5, color: 0xd86a4a, shape: 'crab', passive: true, critter: true },
+  sungull:    { name: 'Sungull',       biome: 'shore',   hp: 30,  atk: 8,  spd: 7.0, xp: 22, r: 0.65, color: 0xf0ead8, shape: 'bird', fly: true, ranged: true },
+  tidespirit: { name: 'Tide Spirit',   biome: 'shore',   hp: 60,  atk: 14, spd: 5.4, xp: 44, r: 1.0, color: 0x3aa8c8, shape: 'wraith', ranged: true, eye: 0xbff0ff },
+  reefserpent:{ name: 'Reef Serpent',  biome: 'shore',   hp: 120, atk: 16, spd: 4.8, xp: 70, r: 1.6, color: 0x2a6a5a, shape: 'drake', ranged: true, swim: true, eye: 0x7ae8c8 },
+  pearlray:   { name: 'Pearl Ray',     biome: 'shore',   hp: 55,  atk: 12, spd: 5.2, xp: 40, r: 1.0, color: 0xe8d8f0, shape: 'wraith', swim: true, eye: 0x4a8ac8 },
+  tidefoal:   { name: 'Tide Foal',     biome: 'shore',   hp: 18,  atk: 0,  spd: 4.5, xp: 9,  r: 0.6, color: 0x8ac8d8, shape: 'quad', passive: true, critter: true, swim: true },
   rimewalker: { name: 'Rime Walker',   biome: 'snow',    hp: 96,  atk: 16, spd: 4.6, xp: 54, r: 1.2, color: 0xb6c6d6, shape: 'tall' },
   glassfang:  { name: 'Glass Fang',    biome: 'snow',    hp: 72,  atk: 15, spd: 6.2, xp: 48, r: 0.9, color: 0xdce8f4, shape: 'quad' },
+  auroraibex:  { name: 'Aurora Ibex',   biome: 'snow',    hp: 80,  atk: 14, spd: 6.8, xp: 50, r: 1.0, color: 0x8ab8e8, shape: 'quad' },
+  snowbell:    { name: 'Snowbell',      biome: 'snow',    hp: 44,  atk: 10, spd: 5.2, xp: 34, r: 0.8, color: 0xe8f0ff, shape: 'wraith', fly: true },
+  snowhare:    { name: 'Snowhare',      biome: 'snow',    hp: 9,   atk: 0,  spd: 6.4, xp: 6,  r: 0.35, color: 0xf0f4fa, shape: 'quad', passive: true, critter: true },
+  frostfox:    { name: 'Frostfox',      biome: 'snow',    hp: 15,  atk: 0,  spd: 6.0, xp: 9,  r: 0.5, color: 0xc8d8e8, shape: 'quad', passive: true, critter: true },
+  frostspirit:{ name: 'Frost Spirit',  biome: 'snow',    hp: 58,  atk: 14, spd: 5.0, xp: 42, r: 1.0, color: 0xa8c8e8, shape: 'wraith', ranged: true, eye: 0xe8f4ff },
+  frostphoenix:{ name: 'Frostphoenix', biome: 'snow',    hp: 120, atk: 17, spd: 6.8, xp: 95, r: 1.0, color: 0xbfe0f8, shape: 'bird', fly: true, ranged: true, crest: true, eye: 0xff6a8a },
+  palewyrm:   { name: 'Pale Wyrm',     biome: 'snow',    hp: 1750, atk: 42, spd: 5.4, xp: 1200, r: 2.8, color: 0xe8ecf4, shape: 'drake', fly: true, boss: true, ranged: true, eye: 0xff2a3a, worldBoss: true },
   /* birds — fast, flying, hate the ground and your face */
   phoenix:    { name: 'Phoenix',       biome: 'volcano', hp: 150, atk: 18, spd: 6.5, xp: 110, r: 1.0, color: 0xe86a2a, shape: 'bird', fly: true, ranged: true, crest: true },
   stormrook:  { name: 'Storm Rook',    biome: 'mountain',hp: 70,  atk: 12, spd: 7.0, xp: 45, r: 0.8, color: 0x5a6a8a, shape: 'bird', fly: true },
+  galebinder: { name: 'Galebinder',    biome: 'mountain',hp: 55,  atk: 13, spd: 7.2, xp: 42, r: 0.8, color: 0x7a9ac8, shape: 'bird', fly: true, ranged: true },
+  craggoat:    { name: 'Craggoat',      biome: 'mountain',hp: 18,  atk: 0,  spd: 4.8, xp: 9,  r: 0.6, color: 0x9a8a7a, shape: 'quad', passive: true, critter: true },
+  cliffmouse:  { name: 'Cliffmouse',    biome: 'mountain',hp: 8,   atk: 0,  spd: 5.0, xp: 5,  r: 0.3, color: 0x7a756a, shape: 'quad', passive: true, critter: true },
+  cliffdarter:{ name: 'Cliffdarter',   biome: 'mountain',hp: 32,  atk: 8,  spd: 7.6, xp: 24, r: 0.6, color: 0x8a9ab8, shape: 'bird', fly: true },
+  galespirit: { name: 'Gale Spirit',   biome: 'mountain',hp: 58,  atk: 14, spd: 6.2, xp: 44, r: 1.0, color: 0xa8d8f0, shape: 'wraith', fly: true, ranged: true, eye: 0xe8f8ff },
+  craggryphon:{ name: 'Crag Gryphon',  biome: 'mountain',hp: 140, atk: 22, spd: 6.0, xp: 120, r: 1.6, color: 0x8a6a3a, shape: 'drake', fly: true, eye: 0xe8a83a },
+  rocmother:  { name: 'Roc Mother',    biome: 'mountain',hp: 1200, atk: 32, spd: 6.8, xp: 850, r: 2.6, color: 0x6a5a48, shape: 'bird', fly: true, boss: true, eye: 0xffd27a, worldBoss: true },
+  duskmaw:    { name: 'Dusk Maw',      biome: 'mountain',hp: 1900, atk: 44, spd: 5.6, xp: 1250, r: 3.0, color: 0x14141c, shape: 'drake', fly: true, boss: true, ranged: true, eye: 0x3a7ae8, worldBoss: true },
   ashcrow:    { name: 'Ash Crow',      biome: 'forest',  hp: 30,  atk: 6,  spd: 6.0, xp: 15, r: 0.6, color: 0x3a3a44, shape: 'bird', fly: true },
   /* wild animals — harmless grazers that flee. Hunting them is allowed. */
   moonrabbit: { name: 'Moonrabbit',    biome: 'meadow',  hp: 10,  atk: 0,  spd: 5.0, xp: 6,  r: 0.4, color: 0xd8d0e8, shape: 'quad', passive: true, critter: true },
@@ -565,23 +611,66 @@ const MOBS = {
   magmawyrm:  { name: 'Magma Wyrm',   biome: 'volcano', hp: 350, atk: 17, spd: 5.0, xp: 260, r: 2.2, color: 0x7a1408, shape: 'drake', boss: true, ranged: true, crest: true },
   frostmaw:   { name: 'Frost Maw',    biome: 'mountain',hp: 330, atk: 16, spd: 4.4, xp: 240, r: 1.8, color: 0xe8f0fc, shape: 'quad', boss: true },
   briarancient:{ name: 'Briar Ancient', biome: 'forest', hp: 300, atk: 15, spd: 3.4, xp: 220, r: 2.1, color: 0x1e4a1e, shape: 'blob', boss: true },
-  drownedchoir:{ name: 'Drowned Choir', biome: 'shore',  hp: 310, atk: 16, spd: 4.6, xp: 230, r: 1.6, color: 0x5a7a8a, shape: 'wraith', fly: true, boss: true, ranged: true }
+  drownedchoir:{ name: 'Drowned Choir', biome: 'shore',  hp: 310, atk: 16, spd: 4.6, xp: 230, r: 1.6, color: 0x5a7a8a, shape: 'wraith', fly: true, boss: true, ranged: true },
+  /* OP open-world side bosses — post-story terrors, huge HP, heavy hits.
+     They live far from roads; the compass never points at them. */
+  stormsovereign:{ name: 'Storm Sovereign', biome: 'mountain', hp: 1400, atk: 34, spd: 6.2, xp: 900, r: 2.4, color: 0x3a4a7a, shape: 'bird', fly: true, boss: true, ranged: true, worldBoss: true },
+  abysscantor:{ name: 'Abyss Cantor', biome: 'shore', hp: 1600, atk: 38, spd: 4.8, xp: 1000, r: 2.6, color: 0x2a1a4a, shape: 'wraith', fly: true, boss: true, ranged: true, worldBoss: true },
+  gloomtitan: { name: 'Gloom Titan', biome: 'forest', hp: 1800, atk: 42, spd: 3.8, xp: 1100, r: 3.0, color: 0x1a2a1a, shape: 'tall', boss: true, worldBoss: true },
+  cinderqueen:{ name: 'Cinder Queen', biome: 'volcano', hp: 2000, atk: 45, spd: 5.2, xp: 1300, r: 3.2, color: 0xa01008, shape: 'drake', boss: true, ranged: true, crest: true, worldBoss: true },
+  embersaint:{ name: 'Ember Saint', biome: 'volcano', hp: 1700, atk: 40, spd: 4.2, xp: 1150, r: 2.6, color: 0xe8b44a, shape: 'tall', boss: true, worldBoss: true, regen: 8 },
+  rimechoir:  { name: 'Rimebound Choir', biome: 'snow', hp: 1500, atk: 36, spd: 5.0, xp: 1000, r: 2.4, color: 0xcfe8ff, shape: 'wraith', fly: true, boss: true, ranged: true, worldBoss: true, regen: 6 },
+  thornwretch:{ name: 'Thornwretch', biome: 'forest', hp: 1650, atk: 38, spd: 3.2, xp: 1050, r: 2.8, color: 0x4a7a1a, shape: 'blob', boss: true, worldBoss: true, regen: 10 },
+  brinetyrant:{ name: 'Brine Tyrant', biome: 'shore', hp: 1550, atk: 37, spd: 4.0, xp: 1020, r: 2.6, color: 0x2a6a7a, shape: 'quad', boss: true, ranged: true, worldBoss: true },
+  /* the living whetstone: ~10M HP, hits for NOTHING. Exists so steel
+     and spells can be measured honestly. Waddles, never wounds. */
+  trialcrab:  { name: 'Trial Crab', biome: 'meadow', hp: 10000000, atk: 0, spd: 3.0, xp: 0, r: 2.6, color: 0xc05038, shape: 'crab', boss: true, worldBoss: true },
+  /* Aurelia the gold — the tame dragon. Biome 'sky' never matches ground,
+     so she only ever exists at her roost, waiting for a rider. */
+  aurelia:    { name: 'Aurelia', biome: 'sky', hp: 5000, atk: 0, spd: 14, xp: 0, r: 2.2, color: 0xd8b46e, shape: 'drake', fly: true, eye: 0x4ae8c8 }
 };
 
-/* Settlement layout. World spans ±6000 units; a walk across is ~30 minutes. */
+/* Settlement layout. World spans ±6000 units; a walk across is ~30 minutes.
+   spec = town specialization (drives unique buildings + shops in world.js):
+   capital / guild (strong adventurers) / academy / forge / port+trade /
+   trade (merchant hub) / herbs / farm / shrine / ruin / chapel */
 const SITES = [
-  { id: 'castle',    name: 'Auverne Castle',    kind: 'castle',  x: 0,     z: 400,   r: 210 },
-  { id: 'rosegate',  name: 'Rosegate Town',     kind: 'town',    x: -260,  z: 1150,  r: 170 },
-  { id: 'prismere',  name: 'Prismere Arcanum',  kind: 'academy', x: -2400, z: -1900, r: 190 },
-  { id: 'emberfall', name: 'Emberfall Hold',    kind: 'forge',   x: 3100,  z: 2400,  r: 175 },
-  { id: 'lullwater', name: 'Lullwater Port',    kind: 'port',    x: 2200,  z: -2600, r: 170 },
-  { id: 'ashmire',   name: 'Ashmire Village',   kind: 'village', x: -3300, z: 2700,  r: 150 },
-  { id: 'greyhollow',name: 'Greyhollow',        kind: 'village', x: 1200,  z: -600,  r: 140 },
-  { id: 'tarn',      name: 'Veilmoon Tarn',     kind: 'shrine',  x: -1100, z: -3900, r: 160 },
-  { id: 'whisper',   name: 'Whisperwood Ruin',  kind: 'ruin',    x: -1900, z: 900,   r: 130 },
-  { id: 'chapel',    name: 'Cinder Chapel',     kind: 'chapel',  x: 2400,  z: 1400,  r: 130 },
-  { id: 'crossroads',name: 'Crossroads Market', kind: 'market',  x: 419,   z: 295,   r: 150 }
+  { id: 'castle',    name: 'Auverne Castle',    kind: 'castle',  x: 0,     z: 400,   r: 210, spec: 'capital' },
+  { id: 'rosegate',  name: 'Rosegate Town',     kind: 'town',    x: -260,  z: 1150,  r: 170, spec: 'guild' },
+  { id: 'prismere',  name: 'Prismere Arcanum',  kind: 'academy', x: -2400, z: -1900, r: 190, spec: 'academy' },
+  { id: 'emberfall', name: 'Emberfall Hold',    kind: 'forge',   x: 3100,  z: 2400,  r: 175, spec: 'forge' },
+  { id: 'lullwater', name: 'Lullwater Port',    kind: 'port',    x: 2200,  z: -2600, r: 170, spec: 'port', ferry: true },
+  { id: 'ashmire',   name: 'Ashmire Village',   kind: 'village', x: -3300, z: 2700,  r: 150, spec: 'herbs' },
+  { id: 'greyhollow',name: 'Greyhollow',        kind: 'village', x: 1200,  z: -600,  r: 140, spec: 'farm', ferry: true },
+  { id: 'tarn',      name: 'Veilmoon Tarn',     kind: 'shrine',  x: -1100, z: -3900, r: 160, spec: 'shrine', ferry: true },
+  { id: 'whisper',   name: 'Whisperwood Ruin',  kind: 'ruin',    x: -1900, z: 900,   r: 130, spec: 'ruin' },
+  { id: 'chapel',    name: 'Cinder Chapel',     kind: 'chapel',  x: 2400,  z: 1400,  r: 130, spec: 'temple' },
+  { id: 'crossroads',name: 'Crossroads Market', kind: 'market',  x: 419,   z: 295,   r: 150, spec: 'trade' }
 ];
+
+/* Ferries: scheduled ships between coastal / lakeside towns.
+   Walk to the dock bell (E) to board; the ship sails itself. */
+const FERRIES = [
+  { id: 'ferry_sun',  name: 'Sunscale Ferry', from: 'lullwater',  to: 'greyhollow', fare: 10 },
+  { id: 'ferry_moon', name: 'Moonlit Ferry',  from: 'lullwater',  to: 'emberfall',  fare: 15 },
+  { id: 'ferry_tarn', name: 'Tarn Skiff',     from: 'tarn',       to: 'prismere',   fare: 8 }
+];
+
+/* Town specializations (fantasy-anime pattern: trade / guild / academy /
+   forge / port / farm-herb). Drives World specialty buildings + NPC jobs. */
+const TOWN_SPECS = {
+  capital: { title: 'Royal Capital',   blurb: 'Knights, wards and courts. Elvia drills here.' },
+  guild:   { title: 'Adventurer Town', blurb: 'Strong guild, training yard, writ board. Best companions for hire.' },
+  academy: { title: 'Grand Academy',   blurb: 'Lecture halls, library, alchemy tower and dorms. Yorune and Rurika read here.' },
+  forge:   { title: 'Forge Hold',      blurb: 'Master smiths, smelters. Ignia spars here. Best weapons.' },
+  port:    { title: 'Trade Port',      blurb: 'Docks, warehouses, ferries. Best prices for merchants.' },
+  trade:   { title: 'Merchant Hub',    blurb: 'Bazaar, stalls, caravan yard. Everything is a bargain to someone.' },
+  herbs:   { title: 'Herb Village',    blurb: 'Alchemists and mourners. Tonics are cheap, grief is free.' },
+  farm:    { title: 'Farm Town',       blurb: 'Granaries, mills, militia hall. Food heals more here.' },
+  shrine:  { title: 'Holy Shrine',     blurb: 'Still water, seven pedestals, one sealed girl.' },
+  ruin:    { title: 'Old Ruin',        blurb: 'Mural, drift-gate, things that hum.' },
+  temple:  { title: 'Chapel',          blurb: 'The Choir hums and never finishes.' }
+};
 
 /* Roads that bind the realm. Drawn as dirt on the land, signposted at towns. */
 const ROUTES = [
@@ -767,6 +856,8 @@ const NPC_LINES = {
                'I have walked every route on the signposts. Ask me about work if your blade is bored.'],
   driver:    ['Horses know the road better than I do. I just hold the reins and look official.',
                'Four to a wagon, friend. The horses counted. They are strict about it.'],
+  keeper:    ['Wings over the ridge mean Aurelia is home. When she is, the sky is safe to borrow.',
+               'Brush her neck before you climb. Dragons remember hands.'],
   maid:      ['The princess takes honey, the knight takes everything, and the mage has never once noticed the tea.',
                'I have worked this castle six years. The walls tell me things. The walls are gossips.'],
   barmaid:   ['Welcome in! Boots off by the hearth if they are muddy. Yours are muddy. I can tell.',
@@ -818,6 +909,9 @@ const NPC_LORE = {
   driver: { topic: 'the wagons',
     work: 'Four to a wagon, driver makes five, horses do not count but think they should. Say the word and we roll — the Crossroads yard keeps the teams ready.',
     rumor: 'Escorted wagons never get touched. Lonely ones sometimes do not arrive at all. If you ride, ride with guards. If you are the guards, even better.' },
+  keeper: { topic: 'the tame dragon',
+    work: 'I keep the roost and the dragon keeps me. Aurelia carries riders she trusts — grain, patience, and no sudden spears. Ask, and the sky is yours.',
+    rumor: 'The black one east hunts at dusk. The pale one sings over the snowfields. Ours hums when she likes you. Listen for it before you climb.' },
   maid: { topic: 'below-stairs',
     work: 'Upstairs they decide things. Downstairs we know things. I make beds, carry trays, and hear every word spoken over soup.',
     rumor: 'The eighth loop? The laundry says a girl\'s ribbon was found inside the circle chalk. Blue ribbon. Nobody at court wears blue ribbon. Nobody admits it.' },

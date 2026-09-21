@@ -27,6 +27,17 @@
 
 <div id="begin" class="off"><p>Click anywhere to begin</p><span>sound awakens with your touch</span></div>
 
+<div id="veil" class="off" aria-hidden="true">
+  <div class="veil-inner">
+    <canvas id="veil-sigil" width="240" height="240"></canvas>
+    <div class="veil-rule"><i></i><span>✦</span><i></i></div>
+    <h2 id="veil-dest">Crossing the Veil</h2>
+    <p id="veil-sub" class="veil-sub"></p>
+    <div class="veil-bar"><i id="veil-fill"></i></div>
+    <p id="veil-tip" class="veil-tip"></p>
+  </div>
+</div>
+
 <div id="title">
   <div class="title-frame" aria-hidden="true"></div>
   <div class="title-inner">
@@ -59,17 +70,22 @@
   </div>
 
   <div class="hud-tr">
-    <div class="plate">
+    <div class="plate minimap-plate"><div class="minimap-ring"><canvas id="minimap" width="150" height="150"></canvas></div></div>
+    <div class="plate" id="quest-plate">
       <span id="q-act"></span>
       <b id="q-title"></b>
       <span id="q-line"></span>
+    </div>
+    <div class="plate off" id="dmglog-plate">
+      <div id="dmglog"></div>
+      <div id="dmgtotal"></div>
     </div>
   </div>
 
   <div id="party"></div>
   <div id="compass"><div id="cmarks"></div><div class="ccaret">▼</div><div class="clegend"><b class="q">★</b> quest &nbsp;<b class="d">▲</b> dungeon &nbsp;<b class="d">S</b> ship &nbsp;<b class="q">♥</b> sealed &nbsp;<b style="color:#ffd27a;font-weight:400">!</b> guard &nbsp;A heroine</div></div>
   <div id="bossbar" class="off"><b id="boss-name"></b><div class="track"><i id="boss-fill"></i></div></div>
-  <div id="hints"><span>E speak</span><span>F strike</span><span>V cast</span><span>G orders</span><span>Space swim</span><span>Esc ring</span></div>
+  <div id="hints"><span>E speak / enter</span><span>F strike</span><span>V cast</span><span>G orders</span><span>P view</span><span>Space swim</span><span>Esc ring</span></div>
   <div id="fps"></div>
   <div id="coords"></div>
   <div id="prompt" class="off"></div>

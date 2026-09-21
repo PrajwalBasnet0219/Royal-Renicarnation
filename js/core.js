@@ -66,7 +66,7 @@ const Input = {
     up: ['w'], down: ['s'], left: ['a'], right: ['d'], run: ['shift'],
     jump: [' '], interact: ['e'], attack: ['f'], command: ['g'],
     fire: ['1'], water: ['2'], wind: ['3'], earth: ['4'], lightning: ['5'], cast: ['v'],
-    horn: ['h'],
+    horn: ['h'], pov: ['p'], swoop: ['x'],
     menu: ['escape'], map: ['m'], quests: ['j'], bonds: ['r'], bag: ['i'], status: ['c']
   },
   init(canvas) {
@@ -184,6 +184,7 @@ const Sound = {
     try {
       if (typeof App !== 'undefined' && App.state !== 'play') want = 'menu';
       else if (World.mode === 'interior') want = 'gate';
+      else if (World.mode === 'building') want = 'town';
       else if (World.mode === 'dungeon' && World.dungeon) {
         const id = World.dungeon.def.id;
         // any living guardian upgrades the dark to the finale

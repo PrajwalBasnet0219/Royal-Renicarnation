@@ -814,6 +814,9 @@ function buildCharacter(look) {
       this._atk = damp(this._atk || 0, action === 'attack' ? 1 : 0, 8, dt);
       this._cst = damp(this._cst || 0, action === 'cast' ? 1 : 0, 8, dt);
       this._sit = damp(this._sit || 0, action === 'sit' ? 1 : 0, 6, dt);
+      this._shy = damp(this._shy || 0, action === 'shy' ? 1 : 0, 6, dt);
+      this._cheer = damp(this._cheer || 0, action === 'cheer' ? 1 : 0, 6, dt);
+      this._stretch = damp(this._stretch || 0, action === 'stretch' ? 1 : 0, 6, dt);
       if (this._atk > 0.01) {
         P.armR.rotation.x = lerp(P.armR.rotation.x, -2.1, this._atk);
         P.armR.rotation.z = lerp(P.armR.rotation.z, -0.5, this._atk);
@@ -845,6 +848,37 @@ function buildCharacter(look) {
         P.armL.rotation.x = -0.15;
         P.torso.rotation.y = w * 0.06;
       }
+      // shy: head ducked, toes in, hands clasped low — the tsundere look
+      if (this._shy > 0.01) {
+        const k = this._shy;
+        if (P.head) {
+          P.head.rotation.x = lerp(P.head.rotation.x, 0.42, k);
+          P.head.rotation.y = lerp(P.head.rotation.y, 0.5, k);
+        }
+        P.armL.rotation.x = lerp(P.armL.rotation.x, -0.35, k);
+        P.armR.rotation.x = lerp(P.armR.rotation.x, -0.35, k);
+        P.armL.rotation.z = lerp(P.armL.rotation.z, -0.45, k);
+        P.armR.rotation.z = lerp(P.armR.rotation.z, 0.45, k);
+        P.torso.rotation.x = lerp(P.torso.rotation.x, 0.10, k);
+      }
+      // cheer: both arms up, small hop in the hips
+      if (this._cheer > 0.01) {
+        const k = this._cheer;
+        P.armL.rotation.x = lerp(P.armL.rotation.x, -2.7, k);
+        P.armR.rotation.x = lerp(P.armR.rotation.x, -2.7, k);
+        P.armL.rotation.z = lerp(P.armL.rotation.z, -0.5, k);
+        P.armR.rotation.z = lerp(P.armR.rotation.z, 0.5, k);
+        P.hips.position.y = lerp(P.hips.position.y, hipsY + 0.10 * H, k);
+      }
+      // stretch: arms overhead, chest out, on tiptoe
+      if (this._stretch > 0.01) {
+        const k = this._stretch;
+        P.armL.rotation.x = lerp(P.armL.rotation.x, -2.9, k);
+        P.armR.rotation.x = lerp(P.armR.rotation.x, -2.9, k);
+        P.torso.rotation.x = lerp(P.torso.rotation.x, -0.12, k);
+        if (P.head) P.head.rotation.x = lerp(P.head.rotation.x, -0.25, k);
+        P.hips.position.y = lerp(P.hips.position.y, hipsY + 0.06 * H, k);
+      }
       // blink
       this.blink -= dt;
       if (this.blink < 0) this.blink = 2.4 + Math.random() * 3.6;
@@ -861,6 +895,8 @@ function buildMob(def) {
   const body = mat(def.color, { rough: 0.85, flat: def.shape === 'blob' });
   const dark = mat(0x140f16, { rough: 0.6 });
   const glow = mat(0xffd27a, { rough: 0.2, emissive: 0xff9a3c, ei: 1.4 });
+  // per-species eye color (white dragon/red eyes, black/blue...); gold by default
+  const iris = def.eye ? mat(def.eye, { rough: 0.2, emissive: def.eye, ei: 1.4 }) : glow;
   const R = def.r;
   const parts = {};
 
@@ -875,7 +911,7 @@ function buildMob(def) {
     for (const s of [-1, 1]) {
       const ear = cone(def.critter ? R * 0.20 : R * 0.14, def.critter ? R * 0.62 : R * 0.36, dark, 6);
       ear.position.set(s * R * 0.26, R * (def.critter ? 1.52 : 1.36), R * 0.98); g.add(ear);
-      const eye = sph(R * 0.08, glow, 8, 6);
+      const eye = sph(R * 0.08, iris, 8, 6);
       eye.position.set(s * R * 0.22, R * 1.12, R * 1.32); g.add(eye);
       for (const f of [-1, 1]) {
         const lg = cyl(R * 0.11, R * 0.09, R * 0.85, dark, 7);
@@ -899,7 +935,7 @@ function buildMob(def) {
       g.add(spike);
     }
     for (const s of [-1, 1]) {
-      const eye = sph(R * 0.11, glow, 8, 6);
+      const eye = sph(R * 0.11, iris, 8, 6);
       eye.position.set(s * R * 0.26, R * 0.92, R * 0.86);
       g.add(eye);
     }
@@ -916,7 +952,7 @@ function buildMob(def) {
       arm.position.set(s * R * 0.55, R * 1.5, 0);
       arm.rotation.z = s * 0.35;
       g.add(arm); parts['arm' + s] = arm;
-      const eye = sph(R * 0.08, glow, 8, 6);
+      const eye = sph(R * 0.08, iris, 8, 6);
       eye.position.set(s * R * 0.14, R * 2.24, R * 0.30); g.add(eye);
     }
   } else if (def.shape === 'wraith') {
@@ -926,7 +962,7 @@ function buildMob(def) {
     const head = sph(R * 0.3, mat(0x0d0a12, { rough: 0.7 }), 12, 10);
     head.position.y = R * 1.5; g.add(head);
     for (const s of [-1, 1]) {
-      const eye = sph(R * 0.07, glow, 8, 6);
+      const eye = sph(R * 0.07, iris, 8, 6);
       eye.position.set(s * R * 0.13, R * 1.55, R * 0.24); g.add(eye);
       const wing = new THREE.Mesh(new THREE.PlaneGeometry(R * 1.3, R * 0.9),
         mat(def.color, { rough: 0.9, opacity: 0.5, side: THREE.DoubleSide }));
@@ -943,7 +979,7 @@ function buildMob(def) {
     const beak = cone(R * 0.12, R * 0.4, dark, 6);
     beak.rotation.x = Math.PI / 2; beak.position.set(0, R * 1.42, R * 0.98); g.add(beak);
     for (const s of [-1, 1]) {
-      const eye = sph(R * 0.07, glow, 8, 6);
+      const eye = sph(R * 0.07, iris, 8, 6);
       eye.position.set(s * R * 0.16, R * 1.5, R * 0.78); g.add(eye);
       const wing = new THREE.Mesh(new THREE.PlaneGeometry(R * 1.7, R * 0.85),
         mat(def.color, { rough: 0.9, side: THREE.DoubleSide }));
@@ -967,6 +1003,44 @@ function buildMob(def) {
         g.add(c);
       }
     }
+  } else if (def.shape === 'crab') {
+    // trial crab: low dome shell, twin crushers, eye stalks, six walkers
+    const shell = sph(R * 0.9, body, 16, 12);
+    shell.scale.set(1.4, 0.62, 1.05); shell.position.y = R * 0.75;
+    g.add(shell); parts.body = shell;
+    for (let i = -1; i <= 1; i++) {
+      const ridge = sph(R * 0.5, dark, 8, 6);
+      ridge.scale.set(0.5, 0.35, 0.9);
+      ridge.position.set(i * R * 0.45, R * 1.12, -R * 0.1);
+      g.add(ridge);
+    }
+    for (const s of [-1, 1]) {
+      const arm = cyl(R * 0.12, R * 0.15, R * 1.1, body, 7);
+      arm.position.set(s * R * 1.1, R * 0.7, R * 0.55);
+      arm.rotation.z = s * 1.1;
+      g.add(arm);
+      const claw = sph(R * 0.42, body, 10, 8);
+      claw.scale.set(1, 1.15, 0.8);
+      claw.position.set(s * R * 1.7, R * 1.05, R * 0.75);
+      g.add(claw); parts['claw' + s] = claw;
+      const pincer = cone(R * 0.18, R * 0.55, dark, 6);
+      pincer.position.set(s * R * 1.7, R * 1.5, R * 1.05);
+      pincer.rotation.x = 0.9;
+      g.add(pincer);
+      const stalk = cyl(R * 0.05, R * 0.05, R * 0.5, dark, 6);
+      stalk.position.set(s * R * 0.22, R * 1.35, R * 0.75);
+      g.add(stalk);
+      const eye = sph(R * 0.09, iris, 8, 6);
+      eye.position.set(s * R * 0.22, R * 1.62, R * 0.78);
+      g.add(eye);
+      for (let f = -1; f <= 1; f++) {
+        const lg = cyl(R * 0.09, R * 0.07, R * 0.9, dark, 6);
+        lg.position.set(s * R * 1.05, R * 0.45, f * R * 0.55);
+        lg.rotation.z = s * 0.9;
+        g.add(lg);
+        parts['leg' + s + f] = lg;
+      }
+    }
   } else { // drake
     const torso = sph(R * 0.8, body, 16, 12);
     torso.scale.set(0.85, 0.8, 1.5); torso.position.y = R * 1.1;
@@ -981,7 +1055,7 @@ function buildMob(def) {
       const horn = cone(R * 0.1, R * 0.5, dark, 6);
       horn.position.set(s * R * 0.18, R * 2.2, R * 1.05); horn.rotation.set(-0.5, 0, -s * 0.4);
       g.add(horn);
-      const eye = sph(R * 0.08, glow, 8, 6);
+      const eye = sph(R * 0.08, iris, 8, 6);
       eye.position.set(s * R * 0.2, R * 2.0, R * 1.5); g.add(eye);
       const wing = new THREE.Mesh(new THREE.PlaneGeometry(R * 2.2, R * 1.4),
         mat(0x6a1c14, { rough: 0.9, side: THREE.DoubleSide }));
@@ -1007,7 +1081,15 @@ function buildMob(def) {
       const s = Math.sin(this.phase);
       if (def.fly) g.position.y = (g.userData.baseY || 0) + 1.2 + s * 0.3;
       if (parts.tail) parts.tail.rotation.y = s * 0.3;
-      if (parts.body) parts.body.scale.y = (parts.body.userData.sy || parts.body.scale.y) * (1 + s * 0.05);
+      // breathe around a FIXED base height — the old code multiplied the
+      // live scale every frame, random-walking bodies into spires.
+      // The fallback table also heals mobs already stretched by the bug.
+      if (parts.body) {
+        if (parts.body.userData.sy == null) {
+          parts.body.userData.sy = { blob: 0.82, tall: 1.3, wraith: 1, bird: 0.7, drake: 0.8, crab: 0.62 }[def.shape] || 1;
+        }
+        parts.body.scale.y = parts.body.userData.sy * (1 + s * 0.05);
+      }
       for (const k in parts) {
         if (k.startsWith('leg')) parts[k].rotation.x = s * 0.5 * moveAmt * (k.endsWith('1') ? 1 : -1);
         if (k.startsWith('wing')) parts[k].rotation.z = (k.includes('-1') ? 1 : -1) * (0.3 + s * 0.5);
@@ -1092,8 +1174,115 @@ function buildHouse(rng, kind) {
       g.add(glyph);
     }
   }
+  // ---- kind dressing: every trade reads differently from the street
+  if (kind === 'guild') {
+    // wide double door + steps + crossed-swords emblem + war banners + torches
+    const dbl = box(2.6, 3.2, 0.28, WOOD());
+    dbl.position.set(0, 1.6, d / 2 + 0.06);
+    g.add(dbl);
+    const step = box(4.2, 0.4, 1.6, STONE_D());
+    step.position.set(0, 0.2, d / 2 + 0.9);
+    g.add(step);
+    for (const s2 of [-1, 1]) {   // crossed golden swords over the door
+      const blade = box(0.22, 2.6, 0.1, mat(0xd8b46e, { rough: 0.3, metal: 0.7 }));
+      blade.position.set(s2 * 0.45, 4.6, d / 2 + 0.15);
+      blade.rotation.z = s2 * 0.6;
+      g.add(blade);
+    }
+    for (const s2 of [-1, 1]) {   // red war banners on poles + torch flame
+      const pole = box(0.16, 4.6, 0.16, WOOD());
+      pole.position.set(s2 * 3.4, 2.3, d / 2 + 0.6);
+      g.add(pole);
+      const ban = box(1.1, 2.6, 0.08, mat(0x8e0f22, { rough: 0.9 }));
+      ban.position.set(s2 * 3.4, 3.2, d / 2 + 0.6);
+      g.add(ban);
+      const torch = sph(0.22, mat(0xffc870, { rough: 0.2, emissive: 0xff9a3c, ei: 1.8 }), 8, 6);
+      torch.position.set(s2 * 3.4, 4.8, d / 2 + 0.6);
+      g.add(torch);
+    }
+  } else if (kind === 'smith') {
+    // chimney, anvil, blade rack and a forge-hot window
+    const chim = box(1.4, h + 3.5, 1.4, mat(0x5a4a44, { rough: 0.95, map: 'stone' }));
+    chim.position.set(w / 2 - 0.6, (h + 3.5) / 2, -d / 4);
+    g.add(chim);
+    const anv = box(1.2, 0.45, 0.45, mat(0x3a3f4a, { rough: 0.45, metal: 0.7 }));
+    anv.position.set(-2.6, 0.75, d / 2 + 1.2);
+    g.add(anv);
+    const stump = cyl(0.4, 0.5, 0.6, WOOD(), 8);
+    stump.position.set(-2.6, 0.3, d / 2 + 1.2);
+    g.add(stump);
+    for (let k = 0; k < 3; k++) {
+      const blade = box(0.1, 1.5, 0.26, mat(0x9aa2b2, { rough: 0.3, metal: 0.7 }));
+      blade.position.set(2.0 + k * 0.7, 1.1, d / 2 + 0.5);
+      blade.rotation.z = 0.25;
+      g.add(blade);
+    }
+    const glow = box(1.2, 1.0, 0.15, mat(0x6a3a1a, { rough: 0.4, emissive: 0xff6a1e, ei: 1.4 }));
+    glow.position.set(2.4, 1.6, d / 2 + 0.06);
+    g.add(glow);
+  } else if (kind === 'shop') {
+    // striped awning, crates, hanging coin
+    for (let k = 0; k < 5; k++) {
+      const stripe = box(0.85, 0.1, 2.0, mat(k % 2 ? 0xc9a44e : 0x8e0f22, { rough: 0.85, side: THREE.DoubleSide }));
+      stripe.position.set(-1.7 + k * 0.85, 3.35 - (k % 2) * 0.12, d / 2 + 1.1);
+      stripe.rotation.x = 0.25;
+      g.add(stripe);
+    }
+    for (const [cx, cy, cz] of [[-2.6, 0.55, 1.0], [-1.7, 0.55, 1.2], [-2.2, 1.5, 1.1]]) {
+      const crate = box(1.0, 1.0, 1.0, WOOD());
+      crate.position.set(cx, cy, d / 2 + cz);
+      crate.rotation.y = cx;
+      g.add(crate);
+    }
+    const coin = cyl(0.4, 0.4, 0.08, mat(0xc9a44e, { rough: 0.35, metal: 0.6 }), 14);
+    coin.rotation.x = Math.PI / 2;
+    coin.position.set(2.9, 3.0, d / 2 + 0.3);
+    g.add(coin);
+  } else if (kind === 'inn' || kind === 'tavern') {
+    // moon emblem, bench, warm windows, barrel (tavern) / hitching post
+    const moon = sph(0.42, mat(0xe8e4f0, { rough: 0.3, emissive: 0xcdd8ff, ei: 0.7 }), 10, 8);
+    moon.position.set(-1.7, 3.6, d / 2 + 0.25);
+    g.add(moon);
+    const bench = box(2.2, 0.4, 0.5, WOOD());
+    bench.position.set(2.4, 0.2, d / 2 + 1.3);
+    g.add(bench);
+    const warm = box(1.4, 1.0, 0.12, mat(0x6a5232, { rough: 0.4, emissive: 0xffc870, ei: 1.1 }));
+    warm.position.set(-2.6, 1.7, d / 2 + 0.05);
+    g.add(warm);
+    const lampPost = box(0.14, 3.0, 0.14, WOOD());
+    lampPost.position.set(3.6, 1.5, d / 2 + 1.0);
+    g.add(lampPost);
+    const lamp = sph(0.24, mat(0xffe6b0, { rough: 0.2, emissive: 0xffc870, ei: 1.6 }), 8, 6);
+    lamp.position.set(3.6, 3.1, d / 2 + 1.0);
+    g.add(lamp);
+    if (kind === 'tavern') {
+      const barrel = cyl(0.55, 0.55, 1.1, WOOD(), 10);
+      barrel.position.set(-3.4, 0.55, d / 2 + 1.2);
+      g.add(barrel);
+    }
+  }
   g.userData.radius = Math.max(w, d) * 0.6;
+  g.userData.dim = { w, h, d };
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  return g;
+}
+
+/* GTA-style LOD shell: a whole house as 2 meshes (walls + roof) for far
+   views. Same silhouette and colors, no windows, no shadows — the fog
+   does the rest, exactly how distant Los Santos blocks read. */
+function buildShellBox(w, h, d, wallColor, roofColor) {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+    mat(wallColor != null ? wallColor : 0xd8d4cc, { rough: 0.95 }));
+  b.position.y = h / 2;
+  g.add(b);
+  const r = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.8, h * 0.95, 4),
+    mat(roofColor != null ? roofColor : 0x1d1a22, { rough: 0.9 }));
+  r.rotation.y = Math.PI / 4;
+  r.position.y = h + h * 0.47;
+  g.add(r);
+  g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+  g.visible = false;
   return g;
 }
 

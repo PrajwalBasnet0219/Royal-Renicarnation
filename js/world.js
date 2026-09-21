@@ -13,12 +13,31 @@ const SEA = 0;
 /* Keep interior: local half-extents, wall height, floor spacing. */
 const INT = { x: 20000, z: 20000, dh: 12, hw: 32, hd: 23, wallH: 8 };
 
+/* Walk-in building rooms: one themed room per kind, far from the overworld. */
+const BINT = { x: 30000, z: 30000, y: 0, w: 9, d: 7, wallH: 5 };
+const BUILDING_INFO = {
+  guild:    { title: 'Guild Hall',   sub: 'adventurers’ hall' },
+  inn:      { title: 'Inn',          sub: 'warm beds' },
+  tavern:   { title: 'Tavern',       sub: 'ale and talk' },
+  shop:     { title: 'Shop',         sub: 'wares and gossip' },
+  smith:    { title: 'Smithy',       sub: 'forge and steel' },
+  house:    { title: 'House',        sub: 'someone’s home' },
+  lecture:  { title: 'Lecture Hall', sub: 'prismere academy' },
+  library:  { title: 'Arcane Library', sub: 'prismere academy' },
+  alchemy:  { title: 'Alchemy Tower', sub: 'prismere academy' },
+  dorm:     { title: 'Dormitory',    sub: 'prismere academy' },
+  greenhouse:{ title: 'Greenhouse',  sub: 'prismere academy' },
+  temple:   { title: 'Chapel',       sub: 'quiet hum' },
+  shrine:   { title: 'Shrine Hut',   sub: 'herbs and quiet' }
+};
+
 const World = {
   scene: null, group: null, dungeonGroup: null,
   noise: null, rng: null, seed: 424242,
   chunks: new Map(), colliders: new Map(), interactables: [],
   mode: 'overworld', dungeon: null, builtDungeons: {},
-  water: null, sky: null, sun: null, hemi: null,
+  doors: [], building: null, buildingGroup: null,
+  lod: [],   // GTA-style swaps: { full, shell, wx, wz, far }  water: null, sky: null, sun: null, hemi: null,
   _volc: { x: 3100, z: 2400, r: 1500 },
 
   /* ---------------- height and biome ---------------- */
@@ -135,6 +154,41 @@ const World = {
     this.buildDrift();
     this.buildTownFurniture();
     this.buildWeather();
+    this.buildClouds();
+  },
+
+  /* Drifting clouds: flat-shaded puff clusters riding high, wrapping
+     around the camera so the sky never empties. Lit by day, dimmed
+     by night in cycle(). One shared material, never disposed. */
+  buildClouds() {
+    const rng = makeRng(4242);
+    this._cloudMat = new THREE.MeshBasicMaterial({
+      color: 0xf4f6fa, transparent: true, opacity: 0.82, fog: false, depthWrite: false
+    });
+    this.clouds = [];
+    for (let i = 0; i < 14; i++) {
+      const g = new THREE.Group();
+      const n = 3 + ((rng() * 3) | 0);
+      for (let k = 0; k < n; k++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(18 + rng() * 26, 10, 8), this._cloudMat);
+        puff.scale.y = 0.45;
+        puff.position.set((rng() - 0.5) * 90, (rng() - 0.5) * 10, (rng() - 0.5) * 36);
+        g.add(puff);
+      }
+      g.position.set((rng() - 0.5) * 2600, 250 + rng() * 130, (rng() - 0.5) * 2600);
+      g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+      this.scene.add(g);
+      this.clouds.push({ g, vx: 1.5 + rng() * 2 });
+    }
+  },
+  tickClouds(dt, px, pz) {
+    if (!this.clouds) return;
+    for (const c of this.clouds) {
+      c.g.position.x += c.vx * dt;
+      const ox = c.g.position.x - px, oz = c.g.position.z - pz;
+      if (ox > 1400) c.g.position.x -= 2800; else if (ox < -1400) c.g.position.x += 2800;
+      if (oz > 1400) c.g.position.z -= 2800; else if (oz < -1400) c.g.position.z += 2800;
+    }
   },
 
   _shared() {
@@ -374,14 +428,245 @@ const World = {
       g.add(trim);
 
       if (s.kind === 'castle') this._castle(g, s, base, rng);
+      else if (s.kind === 'academy') this._academy(g, s, base, rng);
       else this._town(g, s, base, rng);
       if (s.id === 'chapel') this._dressChapel(g, s, base);
       if (s.id === 'crossroads') this._dressMarket(g, s, base, rng);
+      this._specializeTown(g, s, base, rng);
       this._signpost(g, s, base);
 
       this.group.add(g);
       s.group = g;
       s.baseY = base;
+    }
+  },
+
+  /* Grand Academy campus (Prismere): walled court with 6 blue-roof halls
+     around a central tower + green dome, like a fantasy-anime academy.
+     1 Grand Lecture Hall (center tower) / 2 Arcane Library / 3 Alchemy Tower /
+     4 Dormitories / 5 Greenhouse dome / 6 Gatehouse. */
+  _academy(g, s, base, rng) {
+    const BLUE = () => mat(0x3a5fa8, { rough: 0.7, map: 'roof' });
+    const WALL = STONE(), WALLD = STONE_D();
+    // outer academy wall with gate gap toward world centre
+    const facing = Math.atan2(-s.z, -s.x);
+    s._segs = [];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * TAU;
+      let diff = Math.abs(((a - facing + Math.PI) % TAU + TAU) % TAU - Math.PI);
+      if (diff < 0.30) continue;
+      const seg = box(7.2, 6.5, 1.8, WALLD);
+      seg.position.set(Math.cos(a) * s.r, base + 3.2, Math.sin(a) * s.r);
+      seg.rotation.y = -a;
+      g.add(seg);
+      s._segs.push(seg);
+      this.addCollider(s.x + Math.cos(a) * s.r, s.z + Math.sin(a) * s.r, 2.8, 'wall');
+    }
+    this._wallDrum(g, s, base, s.r, 6.5);
+    const hall = (w, h, d, x, z, ry, roofMat) => {
+      const b = box(w, h, d, WALL);
+      b.position.set(x, base + h / 2, z);
+      b.rotation.y = ry || 0;
+      b.receiveShadow = true;
+      g.add(b);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.78, h * 0.7, 4), roofMat || BLUE());
+      roof.rotation.y = Math.PI / 4 + (ry || 0);
+      roof.position.set(x, base + h + h * 0.35, z);
+      g.add(roof);
+      for (let k = 0; k < 4; k++) {
+        const win = box(1.1, 1.8, 0.25, GLASS());
+        win.position.set(x + (k - 1.5) * w * 0.22, base + h * 0.55, z + d / 2 + 0.06);
+        win.rotation.y = ry || 0;
+        g.add(win);
+      }
+      this.addCollider(s.x + x, s.z + z, Math.max(w, d) * 0.62, 'building');
+      this.registerLod(g, b, w, h, d, 0xd8d4cc, 0x3a5fa8);   // blue-roof far twin
+      return b;
+    };
+    // 1. central Grand Lecture Hall + clock tower
+    hall(26, 18, 20, 0, -10, 0);
+    this.addDoor(s, 0, -10, 'lecture', 15);
+    const tower = buildTower(34, 5.2);
+    tower.position.set(0, base, -10);
+    g.add(tower);
+    this.addCollider(s.x, s.z - 10, 6.5, 'tower');
+    // 2. Arcane Library (long hall, west)
+    hall(30, 10, 12, -42, 8, 0.25);
+    this.addDoor(s, -42, 8, 'library', 16);
+    // 3. Alchemy Tower (tall brick, east — the rust-red chimney in the ref)
+    const alch = cyl(5.5, 6.5, 30, mat(0x8a4a30, { rough: 0.9, map: 'stone' }), 12);
+    alch.position.set(44, base + 15, -6);
+    g.add(alch);
+    const alchTop = cyl(6.5, 5.5, 4, WALLD, 12);
+    alchTop.position.set(44, base + 32, -6);
+    g.add(alchTop);
+    this.addCollider(s.x + 44, s.z - 6, 7.5, 'tower');
+    this.addDoor(s, 44, -6, 'alchemy', 8);
+    // 4. Dormitories (two long pink-grey halls, south)
+    const dormM = mat(0xc8a0a8, { rough: 0.9, map: 'stone' });
+    for (const dx of [-24, 24]) {
+      const dd = box(22, 9, 10, dormM);
+      dd.position.set(dx, base + 4.5, 34);
+      dd.receiveShadow = true;
+      g.add(dd);
+      const rf = new THREE.Mesh(new THREE.ConeGeometry(16, 7, 4), BLUE());
+      rf.rotation.y = Math.PI / 4;
+      rf.position.set(dx, base + 12.5, 34);
+      g.add(rf);
+      this.addCollider(s.x + dx, s.z + 34, 12, 'building');
+      this.addDoor(s, dx, 34, 'dorm', 11);
+      const dsh = buildShellBox(22, 9, 10, 0xc8a0a8, 0x3a5fa8);   // dorm far twin
+      dsh.position.copy(dd.position);
+      g.add(dsh);
+      this.lod.push({ full: [dd, rf], shell: dsh, wx: s.x + dx, wz: s.z + 34, far: false });
+    }
+    // 5. Greenhouse dome (green glass, north-east)
+    const dome = sph(8, mat(0x4a8a5a, { rough: 0.25, metal: 0.15, emissive: 0x1a4a2a, ei: 0.5 }), 18, 12);
+    dome.scale.y = 0.7;
+    dome.position.set(-40, base + 1, -34);
+    g.add(dome);
+    this.addCollider(s.x - 40, s.z - 34, 9, 'building');
+    this.addDoor(s, -40, -34, 'greenhouse', 9);
+    // 6. Gatehouse + courtyard lamps + monument
+    for (const sx of [-1, 1]) {
+      const t = buildTower(16, 3.4);
+      t.position.set(sx * 9, base, s.r * 0.72);
+      g.add(t);
+      this.addCollider(s.x + sx * 9, s.z + s.r * 0.72, 4.2, 'gatetower');
+    }
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU;
+      const lx = Math.cos(a) * s.r * 0.42, lz = Math.sin(a) * s.r * 0.42;
+      // stand: stone base + thick iron post + crossarm so the orb never floats
+      const lampBase = cyl(0.5, 0.65, 0.6, STONE_D(), 10);
+      lampBase.position.set(lx, base + 0.3, lz);
+      g.add(lampBase);
+      const post = cyl(0.20, 0.26, 4.2, mat(0x3a3644, { rough: 0.7 }), 8);
+      post.position.set(lx, base + 2.4, lz);
+      g.add(post);
+      const arm = box(1.1, 0.16, 0.16, mat(0x3a3644, { rough: 0.7 }));
+      arm.position.set(lx, base + 4.4, lz);
+      g.add(arm);
+      const lamp = sph(0.46, mat(0xffe6b0, { rough: 0.2, emissive: 0xffc870, ei: 1.3 }), 8, 6);
+      lamp.position.set(lx, base + 4.05, lz);
+      g.add(lamp);
+    }
+    const ob = cone(1.5, 11, STONE(), 4);
+    ob.position.set(0, base + 6.8, 12);
+    ob.rotation.y = Math.PI / 4;
+    g.add(ob);
+    this.addCollider(s.x, s.z + 12, 3.6, 'monument');
+  },
+
+  /* Town specialization dressing: each town gets signature buildings /
+     props by its spec (trade / guild / forge / port / farm / herbs...).
+     5–6 fantasy-anime staples: guild hall, market bazaar, forge+smelter,
+     docks+lighthouse, chapel altar, farm mill+granary. */
+  _specializeTown(g, s, base, rng) {
+    const spec = s.spec || s.kind;
+    const at = (lx, lz) => ({ x: s.x + lx, z: s.z + lz });
+    const putHouse = (kind, lx, lz, big) => {
+      const h = buildHouse(rng, kind);
+      if (big) h.scale.setScalar(1.5);
+      h.position.set(lx, base, lz);
+      h.rotation.y = Math.atan2(-lx, -lz);
+      g.add(h);
+      const p = at(lx, lz);
+      const rad = (h.userData.radius || 5) * (big ? 1.5 : 1);
+      this.addCollider(p.x, p.z, rad, 'building');
+      this.addDoor(s, lx, lz, kind, rad);
+      const pdm = h.userData.dim;
+      if (pdm) this.registerLod(g, h, pdm.w, pdm.h, pdm.d);
+      return h;
+    };
+    if (spec === 'guild') {
+      // big guildhall with training dummies + yard
+      putHouse('guild', -s.r * 0.35, -s.r * 0.3, true);
+      for (let i = 0; i < 3; i++) {
+        const dum = cyl(0.4, 0.5, 1.8, WOOD(), 8);
+        dum.position.set(s.r * 0.3 + i * 2.5, base + 0.9, -s.r * 0.25);
+        g.add(dum);
+      }
+      const yard = new THREE.Mesh(new THREE.CircleGeometry(9, 20), mat(0x9a8a6a, { rough: 0.95 }));
+      yard.rotation.x = -Math.PI / 2;
+      yard.position.set(s.r * 0.32, base + 0.08, -s.r * 0.22);
+      g.add(yard);
+    } else if (spec === 'trade' || spec === 'port') {
+      // bazaar warehouse + crates + extra stalls
+      putHouse('shop', s.r * 0.35, s.r * 0.28, true);
+      for (let i = 0; i < 6; i++) {
+        const c = box(1.1, 1.1, 1.1, WOOD());
+        c.position.set((rng() - 0.5) * 30, base + 0.55, (rng() - 0.5) * 30);
+        c.rotation.y = rng() * 3;
+        g.add(c);
+      }
+      if (spec === 'port') {
+        // lighthouse at plaza edge + dock planks toward water
+        const lh = cyl(2.2, 2.8, 18, mat(0xd8d4cc, { rough: 0.85 }), 12);
+        lh.position.set(-s.r * 0.5, base + 9, s.r * 0.4);
+        g.add(lh);
+        const lamp = sph(1.0, mat(0xffe6b0, { rough: 0.2, emissive: 0xffc870, ei: 2.0 }), 10, 8);
+        lamp.position.set(-s.r * 0.5, base + 19, s.r * 0.4);
+        g.add(lamp);
+        const li = new THREE.PointLight(0xffc870, 1.2, 40, 2);
+        li.position.set(-s.r * 0.5, base + 19, s.r * 0.4);
+        g.add(li);
+        const p = at(-s.r * 0.5, s.r * 0.4);
+        this.addCollider(p.x, p.z, 3.4, 'lighthouse');
+        // dock bell post (ferry board point)
+        const bell = box(0.3, 3.2, 0.3, WOOD());
+        bell.position.set(s.r * 0.3, base + 1.6, s.r * 0.45);
+        g.add(bell);
+        s.dock = { x: s.x + s.r * 0.3, z: s.z + s.r * 0.45 };
+      }
+    } else if (spec === 'forge') {
+      // smelter chimney + forge hall + ore piles
+      const ch = cyl(2.0, 2.8, 22, mat(0x5a4a44, { rough: 0.95, map: 'stone' }), 10);
+      ch.position.set(s.r * 0.4, base + 11, -s.r * 0.3);
+      g.add(ch);
+      const glow = new THREE.PointLight(0xff6a2a, 1.6, 30, 2);
+      glow.position.set(s.r * 0.4, base + 3, -s.r * 0.3 + 4);
+      g.add(glow);
+      putHouse('smith', -s.r * 0.3, s.r * 0.25, true);
+      const p = at(s.r * 0.4, -s.r * 0.3);
+      this.addCollider(p.x, p.z, 3.2, 'smelter');
+    } else if (spec === 'farm') {
+      // windmill + granary
+      const mill = cyl(0.4, 0.4, 16, WOOD(), 8);
+      mill.position.set(-s.r * 0.4, base + 8, -s.r * 0.3);
+      g.add(mill);
+      for (let i = 0; i < 4; i++) {
+        const blade = box(1.2, 7, 0.15, mat(0xd8d0bc, { rough: 0.85 }));
+        blade.position.set(-s.r * 0.4, base + 14, -s.r * 0.3 + 0.6);
+        blade.rotation.z = i * Math.PI / 2 + 0.4;
+        g.add(blade);
+      }
+      putHouse('house', s.r * 0.35, s.r * 0.3, true);
+      const p = at(-s.r * 0.4, -s.r * 0.3);
+      this.addCollider(p.x, p.z, 2.0, 'mill');
+      // ferry dock bell for farm port towns
+      if (s.ferry) {
+        const bell = box(0.3, 3.2, 0.3, WOOD());
+        bell.position.set(s.r * 0.3, base + 1.6, s.r * 0.45);
+        g.add(bell);
+        s.dock = { x: s.x + s.r * 0.3, z: s.z + s.r * 0.45 };
+      }
+    } else if (spec === 'herbs' || spec === 'shrine') {
+      // greenhouse hut + herb garden rows
+      putHouse('house', s.r * 0.3, -s.r * 0.25, false);
+      for (let i = 0; i < 4; i++) {
+        const row = box(6, 0.5, 1.2, mat(0x3b6032, { rough: 0.95 }));
+        row.position.set(-s.r * 0.25 + i * 2, base + 0.25, s.r * 0.3);
+        g.add(row);
+      }
+      if (s.ferry && !s.dock) {
+        s.dock = { x: s.x + s.r * 0.3, z: s.z + s.r * 0.45 };
+      }
+    } else if (s.ferry && !s.dock) {
+      const bell = box(0.3, 3.2, 0.3, WOOD());
+      bell.position.set(s.r * 0.3, base + 1.6, s.r * 0.45);
+      g.add(bell);
+      s.dock = { x: s.x + s.r * 0.3, z: s.z + s.r * 0.45 };
     }
   },
 
@@ -505,6 +790,60 @@ const World = {
       this.group.add(hm.root);
       this.addCollider(sp.x, sp.z, 3.0, 'wagon');
     }
+  },
+
+  /* LOD swaps (GTA-style): every registered building gets a 2-mesh shell
+     twin. Close up you see windows and signs; past ~280 m the shell takes
+     over and the full group (plus its shadow work) sleeps. Hysteresis on
+     the way back so the swap never flickers at the boundary. */
+  registerLod(parent, full, w, h, d, wallC, roofC) {
+    const shell = buildShellBox(w, h, d, wallC, roofC);
+    shell.position.copy(full.position);
+    shell.rotation.y = full.rotation.y || 0;
+    shell.scale.copy(full.scale);
+    parent.add(shell);
+    const wx = (parent.position ? parent.position.x : 0) + full.position.x;
+    const wz = (parent.position ? parent.position.z : 0) + full.position.z;
+    this.lod.push({ full, shell, wx, wz, far: false });
+    return shell;
+  },
+  updateLod(px, pz, dt) {
+    this._lodT = (this._lodT || 0) + dt;
+    if (this._lodT < 0.5) return;
+    this._lodT = 0;
+    // buildings: ~25 meshes close, 2 meshes far
+    for (const e of this.lod) {
+      const dx = e.wx - px, dz = e.wz - pz;
+      const d2 = dx * dx + dz * dz;
+      const setV = v => { if (Array.isArray(e.full)) { for (const f of e.full) f.visible = v; } else e.full.visible = v; };
+      if (!e.far && d2 > 280 * 280) { e.far = true; setV(false); e.shell.visible = true; }
+      else if (e.far && d2 < 240 * 240) { e.far = false; setV(true); e.shell.visible = false; }
+    }
+    // town walls: one drum far away instead of ~60 segments + shadows
+    for (const s of SITES) {
+      if (!s._segs || !s._segs.length || !s._wallShell) continue;
+      const dx = s.x - px, dz = s.z - pz;
+      const far = dx * dx + dz * dz > 340 * 340;
+      if (far === s._wallFar) continue;
+      s._wallFar = far;
+      for (const m of s._segs) m.visible = !far;
+      s._wallShell.visible = far;
+    }
+  },
+
+  /* Far twin for a town wall ring: one unlit drum instead of ~60 segments.
+     Colliders stay — only the meshes sleep. */
+  _wallDrum(g, s, base, radius, height) {
+    if (!s._segs || !s._segs.length) return;
+    const drum = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, height, 40, 1, true),
+      mat(0x9d9890, { rough: 0.95, side: THREE.DoubleSide }));
+    drum.position.set(0, base + height / 2, 0);
+    drum.castShadow = false; drum.receiveShadow = false;
+    drum.visible = false;
+    g.add(drum);
+    s._wallShell = drum;
+    s._wallFar = false;
   },
 
   /* Waystones: older than the wards, kinder. Touch to travel. */
@@ -657,6 +996,9 @@ const World = {
       g.add(h);
       placed.push({ x, z });
       this.addCollider(s.x + x, s.z + z, h.userData.radius, 'building');
+      this.addDoor(s, x, z, kind, h.userData.radius);
+      const dm = h.userData.dim;   // far twin: 2 meshes instead of ~25
+      if (dm) this.registerLod(g, h, dm.w, dm.h, dm.d);
       if (kind === 'tavern') this._terrace(g, s, base, x, z, h.userData.radius);
     }
     // monument
@@ -669,14 +1011,22 @@ const World = {
     // lamps
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * TAU;
-      const p = cyl(0.12, 0.16, 4.2, mat(0x2a2630, { rough: 0.7 }), 6);
-      p.position.set(Math.cos(a) * s.r * 0.42, base + 2.1, Math.sin(a) * s.r * 0.42);
+      const lx = Math.cos(a) * s.r * 0.42, lz = Math.sin(a) * s.r * 0.42;
+      const lampBase = cyl(0.5, 0.65, 0.6, STONE_D(), 10);
+      lampBase.position.set(lx, base + 0.3, lz);
+      g.add(lampBase);
+      const p = cyl(0.20, 0.26, 4.2, mat(0x3a3644, { rough: 0.7 }), 8);
+      p.position.set(lx, base + 2.4, lz);
       g.add(p);
-      const lantern = sph(0.42, mat(0xffe6b0, { rough: 0.2, emissive: 0xffc870, ei: 1.3 }), 8, 6);
-      lantern.position.set(Math.cos(a) * s.r * 0.42, base + 4.5, Math.sin(a) * s.r * 0.42);
+      const arm = box(1.1, 0.16, 0.16, mat(0x3a3644, { rough: 0.7 }));
+      arm.position.set(lx, base + 4.4, lz);
+      g.add(arm);
+      const lantern = sph(0.46, mat(0xffe6b0, { rough: 0.2, emissive: 0xffc870, ei: 1.3 }), 8, 6);
+      lantern.position.set(lx, base + 4.05, lz);
       g.add(lantern);
     }
     // wall with a gap facing the world centre
+    s._segs = [];
     if (s.kind !== 'ruin' && s.kind !== 'shrine') {
       const facing = Math.atan2(-s.z, -s.x);
       for (let i = 0; i < 56; i++) {
@@ -687,9 +1037,11 @@ const World = {
         seg.position.set(Math.cos(a) * s.r, base + 2.6, Math.sin(a) * s.r);
         seg.rotation.y = -a;
         g.add(seg);
+        s._segs.push(seg);
         this.addCollider(s.x + Math.cos(a) * s.r, s.z + Math.sin(a) * s.r, 2.6, 'wall');
       }
     }
+    this._wallDrum(g, s, base, s.r, 5.2);
   },
 
   _castle(g, s, base, rng) {
@@ -719,6 +1071,7 @@ const World = {
     }
     // curtain wall with a single gate to the south — the story's gate
     const R = s.r;
+    s._segs = [];
     for (let i = 0; i < 80; i++) {
       const a = (i / 80) * TAU;
       const inGate = Math.abs(a - Math.PI / 2) < 0.12;
@@ -729,13 +1082,16 @@ const World = {
       seg.position.set(Math.cos(a) * R, base + 4.5, Math.sin(a) * R);
       seg.rotation.y = -a;
       g.add(seg);
+      s._segs.push(seg);
       this.addCollider(s.x + Math.cos(a) * R, s.z + Math.sin(a) * R, 3.6, 'wall');
       if (i % 8 === 0) {
         const merl = box(2, 2, 2, STONE_D());
         merl.position.set(Math.cos(a) * R, base + 10, Math.sin(a) * R);
         g.add(merl);
+        s._segs.push(merl);
       }
     }
+    this._wallDrum(g, s, base, R, 9);
     // gatehouse
     for (const s2 of [-1, 1]) {
       const t = buildTower(20, 4.2);
@@ -771,12 +1127,16 @@ const World = {
     for (let i = 0; i < 6; i++) {
       const a = Math.PI * (0.15 + rng() * 0.7);
       const rr = R * 0.6;
-      const h = buildHouse(rng, i === 0 ? 'guild' : 'house');
+      const hk = i === 0 ? 'guild' : 'house';
+      const h = buildHouse(rng, hk);
       const x = Math.cos(a) * rr, z = Math.sin(a) * rr;
       h.position.set(x, base, z);
       h.rotation.y = Math.atan2(-x, -z);
       g.add(h);
       this.addCollider(s.x + x, s.z + z, h.userData.radius, 'building');
+      this.addDoor(s, x, z, hk, h.userData.radius);
+      const cdm = h.userData.dim;
+      if (cdm) this.registerLod(g, h, cdm.w, cdm.h, cdm.d);
     }
   },
 
@@ -993,12 +1353,17 @@ const World = {
   pickWeather(px, pz) {
     const h = this.height(px, pz);
     const b = this.biome(px, pz, h);
-    const bag = [['clear', 30], ['rain', 22], ['storm', 8], ['snow', 10],
+    let bag = [['clear', 30], ['rain', 22], ['storm', 8], ['snow', 10],
       ['leaves', 12], ['petals', 10], ['ash', 6], ['fog', 10], ['tornado', 4]];
     if (b === 'snow') bag.push(['snow', 40]);
     if (b === 'volcano') bag.push(['ash', 40]);
     if (b === 'forest') bag.push(['leaves', 15]);
     if (h < 1) bag.push(['rain', 10], ['storm', 6]);   // sea squalls
+    // logical skies: snow over snowfields, ash over the caldera, leaves
+    // and petals where things grow — rain, storm, fog and twisters roam free
+    const home = { snow: ['snow'], ash: ['volcano'], leaves: ['forest', 'meadow'], petals: ['meadow', 'shore', 'forest'] };
+    const kept = bag.filter(([k]) => !home[k] || home[k].includes(b));
+    if (kept.length) bag = kept;
     let total = 0;
     for (const [, w] of bag) total += w;
     let r = Math.random() * total, pick = 'clear';
@@ -1392,6 +1757,461 @@ const World = {
   interiorCols() {
     if (!this.interior) return [];
     return this.interior.floors[this.interior.cur].cols;
+  },
+
+  /* Walk-in buildings: doors registered at build time (overworld coords).
+     Door sits at the building edge facing the plaza so E always reaches it. */
+  addDoor(site, lx, lz, kind, radius) {
+    const l = Math.hypot(lx, lz) || 1;
+    // door on the plaza side of the building, just outside its collider
+    const edge = (radius || 6) + 1.8;
+    const d = {
+      x: site.x + lx - (lx / l) * edge,
+      z: site.z + lz - (lz / l) * edge,
+      site: site.id, kind: kind || 'house'
+    };
+    this.doors.push(d);
+    return d;
+  },
+
+  buildingCols() {
+    return (this.building && this.building.cols) || [];
+  },
+
+  buildingName(kind) {
+    const b = BUILDING_INFO[kind] || BUILDING_INFO.house;
+    return b.title;
+  },
+
+  enterBuilding(door) {
+    if (this.mode !== 'overworld' || !door) return null;
+    const p = Entities.player;
+    if (!this.buildingGroup) {
+      this.buildingGroup = new THREE.Group();
+      this.buildingGroup.visible = false;
+      this.scene.add(this.buildingGroup);
+    }
+    this.building = this.buildBuildingInterior(door.kind || 'house', door.site);
+    this.buildingGroup.visible = true;
+    this.group.visible = false;
+    this.water.visible = false;
+    this.sky.visible = false;
+    for (const k in this.builtDungeons) this.builtDungeons[k].root.visible = false;
+    if (this.interiorGroup) this.interiorGroup.visible = false;
+    this.mode = 'building';
+    this.scene.fog = new THREE.Fog(0x0d0a12, 10, 120);
+    this.scene.background = new THREE.Color(0x0d0a12);
+    this.hemi.intensity = 0.5;
+    this.sun.intensity = 0.15;
+    // park everyone by the door mat, facing the room
+    p.x = BINT.x; p.z = BINT.z + BINT.d - 2.4;
+    p.y = BINT.y; p.floorY = BINT.y;
+    p.vx = 0; p.vz = 0; p.vy = 0; p.grounded = true;
+    Camera3.target.set(p.x, p.y + 1.5, p.z);
+    Camera3.yaw = Math.PI;
+    // small rooms need a close camera or it clips through the walls —
+    // remember the outdoor distance and give it back on the way out
+    this._prevDist = Camera3.dist;
+    Camera3.dist = 3.4;
+    for (const h of Entities.companions) {
+      h.x = p.x - 1.5; h.z = p.z - 1.5;
+      h.y = BINT.y; h.floorY = BINT.y;
+      h.wx = null; h.target = null;
+    }
+    return this.building;
+  },
+
+  leaveBuilding() {
+    if (this.mode !== 'building') return;
+    if (this.buildingGroup) this.buildingGroup.visible = false;
+    this.group.visible = true;
+    this.water.visible = true;
+    this.sky.visible = true;
+    this.mode = 'overworld';
+    this.scene.fog = new THREE.Fog(0x9fb0c4, 260, 900);
+    this.scene.background = new THREE.Color(0x9fb0c4);
+    this.hemi.intensity = 0.72;
+    this.sun.intensity = 1.15;
+    if (this._prevDist != null) { Camera3.dist = this._prevDist; this._prevDist = null; }
+    const p = Entities.player;
+    delete p.floorY;
+    for (const h of Entities.companions) delete h.floorY;
+    Sound.sfx('back');
+  },
+
+  /* One 18x14 m room, themed by kind. Rebuilt per entry (cheap: ~20 meshes).
+     Layout: door mat south, themed furniture north, exit = walk to the mat. */
+  buildBuildingInterior(kind, siteId) {
+    while (this.buildingGroup.children.length) {
+      const c = this.buildingGroup.children.pop();
+      c.traverse(o => { if (o.isMesh && o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+      this.buildingGroup.remove(c);
+    }
+    const B = { kind, site: siteId, cols: [], props: [], root: this.buildingGroup };
+    const bx = BINT.x, bz = BINT.z, by = BINT.y;
+    // grand fantasy scale: lecture halls and guildhalls are big,
+    // cottages stay small — no two kinds share a footprint
+    const DIMS = {
+      lecture: [16, 11, 7], guild: [14, 10, 7], library: [12, 9, 6.5],
+      temple: [12, 9, 6.5], greenhouse: [13, 9, 6], alchemy: [10, 8, 5.5],
+      smith: [10, 8, 5.5], shop: [10, 7, 5], inn: [11, 8, 5.5],
+      tavern: [11, 8, 5.5], dorm: [11, 8, 5.5], house: [8, 6, 4.5],
+      shrine: [8, 6, 4.5]
+    }[kind] || [BINT.w, BINT.d, BINT.wallH];
+    const W = DIMS[0], D = DIMS[1], H = DIMS[2];
+    B.W = W; B.D = D;
+    const put = (mesh, lx, lz, ly) => {
+      mesh.position.set(bx + lx, by + (ly != null ? ly : 0), bz + lz);
+      this.buildingGroup.add(mesh);
+      return mesh;
+    };
+    const col = (lx, lz, r) => B.cols.push({ x: bx + lx, z: bz + lz, r });
+    const prop = (k2, lx, lz, extra) => {
+      B.props.push(Object.assign({ kind: k2, x: bx + lx, z: bz + lz }, extra || {}));
+    };
+    // floor + rug
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(W * 2, 0.5, D * 2), mat(0x6e675e, { rough: 0.95 }));
+    put(fl, 0, 0, -0.25).receiveShadow = true;
+    const rug = new THREE.Mesh(new THREE.BoxGeometry(5, 0.1, 7),
+      mat(kind === 'temple' ? 0x2a1542 : kind === 'guild' ? 0x6e1420 : 0x4a5a44, { rough: 0.95 }));
+    put(rug, 0, -1, 0.06).receiveShadow = true;
+    // walls: north / east / west full, south split for the door mat.
+    // the greenhouse is glass all around, like the academy dome outside.
+    const wallM = kind === 'greenhouse'
+      ? mat(0x9fd8c8, { rough: 0.15, metal: 0.1, opacity: 0.45 })
+      : STONE_D();
+    const mkWall = (w2, lx, lz, ry) => {
+      const m2 = box(w2, H, 1.0, wallM);
+      m2.position.set(bx + lx, by + H / 2, bz + lz);
+      m2.rotation.y = ry || 0;
+      m2.receiveShadow = true;
+      this.buildingGroup.add(m2);
+    };
+    mkWall(W * 2, 0, -D);
+    mkWall(D * 2, -W, 0, Math.PI / 2);
+    mkWall(D * 2, W, 0, Math.PI / 2);
+    mkWall(W - 2.2, -(W / 2 + 1.1), D);
+    mkWall(W - 2.2, (W / 2 + 1.1), D);
+    // door frame on the south gap
+    for (const s2 of [-1, 1]) {
+      const post = box(0.8, 4.2, 0.8, STONE());
+      put(post, s2 * 2.2, D, 2.1);
+      col(s2 * 2.2, D, 0.9);
+    }
+    const lintel = box(5.2, 0.8, 1.0, STONE_D());
+    put(lintel, 0, D, 4.4);
+    // visible ward sealing the doorway (matches the collider seal above)
+    const ward = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 3.8),
+      new THREE.MeshStandardMaterial({
+        color: 0x8fc4ff, transparent: true, opacity: 0.22,
+        emissive: 0x4a86d8, emissiveIntensity: 0.8, side: THREE.DoubleSide
+      }));
+    ward.position.set(bx, by + 2.0, bz + D);
+    this.buildingGroup.add(ward);
+    // wall colliders (posts every 2 m so you can't slip out)
+    for (let d2 = -W; d2 <= W; d2 += 2) col(d2, -D, 1.1);
+    for (let d2 = -D; d2 <= D; d2 += 2) { col(-W, d2, 1.1); col(W, d2, 1.1); }
+    for (let d2 = -W; d2 <= -2.2; d2 += 2) col(d2, D, 1.1);
+    for (let d2 = 2.2; d2 <= W; d2 += 2) col(d2, D, 1.1);
+    // the doorway is ceremonial: a closed ward seals the gap so nobody
+    // slips out of the room (exit via E on the door mat, or auto-exit net)
+    for (const d2 of [-1.65, -0.55, 0.55, 1.65]) col(d2, D, 0.85);
+    // tall glowing windows (north + house banners east/west) so each hall reads differently
+    const BANNER = { guild: 0x8e0f22, temple: 0x2a1542, lecture: 0x3f6fc4, library: 0x2a4a7a, shop: 0xc9a44e, inn: 0x3b6032, tavern: 0x8e0f22, smith: 0x5a4a44, alchemy: 0x4b2a75, dorm: 0x3f6fc4 }[kind] || 0x4a5a44;
+    const winM = (kind === 'inn' || kind === 'tavern' || kind === 'shop')
+      ? mat(0x6a5232, { rough: 0.3, emissive: 0xffc870, ei: 1.0 })
+      : mat(0x3a4a66, { rough: 0.2, emissive: 0x8fb4e8, ei: 0.9 });
+    const winW = 1.5, winH = Math.min(3.2, H * 0.5);
+    for (let k = -1; k <= 1; k++) {
+      const wx = k * Math.min(W - 2.5, 6.5);
+      const wn = box(winW, winH, 0.2, winM);
+      put(wn, wx, -D + 0.6, H * 0.55);
+      const sill = box(winW + 0.4, 0.18, 0.35, STONE_D());
+      put(sill, wx, -D + 0.65, H * 0.55 - winH / 2 - 0.1);
+    }
+    for (const s2 of [-1, 1]) {
+      const ban = box(0.15, 3.4, 1.8, mat(BANNER, { rough: 0.9 }));
+      put(ban, s2 * (W - 0.7), 0, 3.2);
+      const emb = box(0.1, 0.6, 0.6, mat(0xd8c188, { rough: 0.5 }));
+      emb.rotation.x = Math.PI / 4;
+      put(emb, s2 * (W - 0.7), 0, 3.6);
+    }
+    // warm lamp light, scaled to the room
+    const lamp = new THREE.PointLight(0xffc870, 1.1, Math.max(20, W * 2.4), 2);
+    lamp.position.set(bx, by + Math.min(3.4, H - 1.2), bz - 1);
+    this.buildingGroup.add(lamp);
+    // themed furniture
+    const tableAt = (lx, lz, w2, len) => {
+      const top = box(w2, 0.25, len, WOOD());
+      put(top, lx, lz, 1.05);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const leg = box(0.22, 1.0, 0.22, WOOD());
+        put(leg, lx + sx * (w2 / 2 - 0.2), lz + sz * (len / 2 - 0.2), 0.5);
+      }
+      col(lx, lz, Math.max(1.2, w2 * 0.4));
+    };
+    const bedAt = (lx, lz, blanket) => {
+      const frame = box(2.2, 0.7, 3.2, WOOD());
+      put(frame, lx, lz, 0.35);
+      const bl = box(2.0, 0.25, 1.8, mat(blanket || 0x6e5a34, { rough: 0.9 }));
+      put(bl, lx, lz + 0.4, 0.95);
+      col(lx, lz, 2.0);
+      prop('bed', lx, lz + 2.2, { label: 'Rest' });
+    };
+    const shelfAt = (lx, lz, ry) => {
+      const g2 = new THREE.Group();
+      g2.position.set(bx + lx, by, bz + lz);
+      g2.rotation.y = ry || 0;
+      const pal = [0x7a2a2a, 0x2a4a7a, 0x3a6a3a, 0x6a5a2a];
+      for (let s3 = 0; s3 < 3; s3++) {
+        const board = box(3.2, 0.12, 0.5, WOOD());
+        board.position.set(0, 0.6 + s3 * 0.9, 0);
+        g2.add(board);
+        for (let b2 = 0; b2 < 6; b2++) {
+          const bk = box(0.3, 0.6, 0.38, mat(pal[(s3 * 6 + b2) % pal.length], { rough: 0.85 }));
+          bk.position.set(-1.2 + b2 * 0.45, 0.95 + s3 * 0.9, 0);
+          g2.add(bk);
+        }
+      }
+      this.buildingGroup.add(g2);
+      col(lx, lz, 1.7);
+    };
+    // ---- martial guildhall: long tables, writ board, practice dummies, trophies
+    if (kind === 'guild') {
+      const board = box(4.2, 2.4, 0.2, mat(0x4a3b28, { rough: 0.9 }));
+      put(board, 0, -D + 1.2, 2.4);
+      col(0, -D + 1.2, 1.5);
+      prop('board', 0, -D + 2.8, { label: 'Read the guild writs' });
+      for (const dx of [-W + 3, W - 3]) {
+        const dum = cyl(0.45, 0.55, 2.0, WOOD(), 8);
+        put(dum, dx, -1, 1.0);
+        const head = sph(0.4, mat(0x8a6a4a, { rough: 0.85 }), 8, 6);
+        put(head, dx, -1, 2.2);
+        col(dx, -1, 0.9);
+      }
+      prop('dummy', -W + 3, 0.6, { label: 'Strike the practice dummy' });
+      for (const dx of [-4, 4]) {
+        tableAt(dx, 2.5, 3.0, 7);
+        for (const s2 of [-1, 1]) {
+          const bench = box(0.6, 0.5, 7, WOOD());
+          put(bench, dx + s2 * 2.2, 2.5, 0.25);
+          col(dx + s2 * 2.2, 2.5, 0.8);
+        }
+      }
+      for (const s2 of [-1, 1]) {   // trophy shields
+        const shield = cyl(0.9, 0.9, 0.15, mat(0xc9a44e, { rough: 0.35, metal: 0.6 }), 16);
+        shield.rotation.x = Math.PI / 2;
+        put(shield, s2 * (W - 1.2), -4, 3.0);
+      }
+      const hb = box(3.0, 2.4, 1.2, STONE_D());   // hearth, emissive only
+      put(hb, W - 2.2, D - 2, 1.2);
+      const hf = sph(0.5, mat(0xff9a3c, { rough: 0.3, emissive: 0xff6a1e, ei: 2.2 }), 8, 6);
+      put(hf, W - 2.2, D - 2.8, 0.7);
+      col(W - 2.2, D - 2, 1.8);
+      prop('plaque', -W + 2, -D + 1.6, {
+        label: 'Read: guild charter',
+        title: 'Guild Charter',
+        text: 'Strong arms, watched roads. The guild pays per head — take a writ, keep the peace, come back heavier.'
+      });
+    } else if (kind === 'lecture') {
+      // blackboard + lectern north, three tiered bench rows facing it
+      const bb = box(10, 3.4, 0.25, mat(0x14161e, { rough: 0.9 }));
+      put(bb, 0, -D + 0.8, 3.6);
+      const chalk = box(6, 0.9, 0.06, mat(0xd8d8e2, { rough: 0.9 }));
+      put(chalk, -1, -D + 0.95, 3.4);
+      const lect = box(1.4, 1.3, 1.0, WOOD());
+      put(lect, 0, -D + 3.0, 0.65);
+      col(0, -D + 3.0, 1.1);
+      for (let r2 = 0; r2 < 3; r2++) {
+        const rz = -D + 5.5 + r2 * 3.4;
+        const tier = box(Math.min(W * 1.7, 24), 0.5 + r2 * 0.45, 2.2, WOOD());
+        put(tier, 0, rz, 0.3 + r2 * 0.45);
+        col(0, rz, 2.0);
+      }
+      prop('lecture', 0, -D + 6.2, { label: 'Take a seat: attend the lecture' });
+      prop('plaque', W - 2, -D + 1.6, {
+        label: 'Read: syllabus',
+        title: 'Syllabus',
+        text: 'Week nine: veil harmonics. Week ten: why the eighth loop should not exist. Attendance is mandatory. Curiosity is graded.'
+      });
+    } else if (kind === 'library') {
+      shelfAt(-W + 1.6, -2, Math.PI / 2);
+      shelfAt(-W + 1.6, 3, Math.PI / 2);
+      shelfAt(W - 1.6, -2, -Math.PI / 2);
+      shelfAt(W - 1.6, 3, -Math.PI / 2);
+      shelfAt(0, -D + 1.4, 0);
+      tableAt(-3.5, 2.5, 2.6, 4);
+      tableAt(3.5, 2.5, 2.6, 4);
+      for (const dx of [-3.5, 3.5]) {
+        const stool = cyl(0.45, 0.45, 0.6, WOOD(), 8);
+        put(stool, dx, 5.2, 0.3);
+      }
+      prop('study', 0, 2.5, { label: 'Study the shelves' });
+      prop('plaque', W - 2.2, 0.5, {
+        label: 'Read: index card',
+        title: 'Index Card',
+        text: 'Third shelf bites. Legally. The card for your file is warm, which the index insists is impossible.'
+      });
+    } else if (kind === 'temple' || kind === 'shrine') {
+      const altarM = kind === 'temple' ? mat(0x17121f, { rough: 0.6 }) : STONE();
+      const altar = box(3.0, 1.3, 1.4, altarM);
+      put(altar, 0, -D + 1.8, 0.65);
+      col(0, -D + 1.8, 1.8);
+      prop('altar', 0, -D + 3.6, { label: kind === 'temple' ? 'Kneel a moment' : 'Catch your breath' });
+      for (const rz of [-1, 2.5]) for (const dx of [-3, 3]) {
+        const pew = box(4.4, 0.55, 0.9, WOOD());
+        put(pew, dx, rz, 0.3);
+        col(dx, rz, 1.4);
+      }
+      for (const s2 of [-1, 1]) for (const rz of [-D + 3.5, 1]) {   // tall candles
+        const pole = cyl(0.09, 0.12, 2.2, mat(0x2a2630, { rough: 0.6 }), 6);
+        put(pole, s2 * (W - 2), rz, 1.1);
+        const fl = sph(0.14, mat(0xffd08a, { rough: 0.2, emissive: 0xffb454, ei: 2.4 }), 6, 5);
+        put(fl, s2 * (W - 2), rz, 2.25);
+      }
+      const rose = new THREE.Mesh(new THREE.TorusGeometry(1.6, 0.22, 8, 24),   // rose window
+        mat(0xb46ae8, { rough: 0.3, emissive: 0x7a2fd0, ei: 1.6 }));
+      put(rose, 0, -D + 0.7, H - 1.6);
+      prop('plaque', -W + 2, -1, {
+        label: 'Read: inscription',
+        title: 'Inscription',
+        text: 'Say “later”, never farewell. The stones keep the rest.'
+      });
+    } else if (kind === 'greenhouse') {
+      const basin = cyl(2.4, 2.6, 1.0, STONE(), 16);   // fountain heart
+      put(basin, 0, -2, 0.5);
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(2.1, 20),
+        mat(0x4aa8c8, { rough: 0.15, emissive: 0x2a6a8a, ei: 0.7 }));
+      pool.rotation.x = -Math.PI / 2;
+      put(pool, 0, -2, 1.02);
+      col(0, -2, 2.7);
+      for (const dx of [-6, -3, 3, 6]) {   // herb beds
+        const bed = box(2.0, 0.6, 7, mat(0x3b4a2e, { rough: 0.95 }));
+        put(bed, dx, 1, 0.3);
+        for (let k = 0; k < 4; k++) {
+          const herb = sph(0.32, mat(0x4a8a3a, { rough: 0.8 }), 7, 6);
+          put(herb, dx + (k % 2 ? 0.45 : -0.45), -1.5 + k * 1.6, 0.9);
+        }
+        col(dx, 1, 1.6);
+      }
+      prop('herbs', 3, 4.6, { label: 'Pick marsh herbs' });
+      prop('plaque', -W + 2, -D + 1.6, {
+        label: 'Read: planting chart',
+        title: 'Planting Chart',
+        text: 'Moonwell mint under glass, ember thyme by the vents. Take cuttings, leave the roots. The dome notices.'
+      });
+    } else if (kind === 'inn' || kind === 'tavern' || kind === 'dorm') {
+      if (kind === 'dorm') {
+        for (const dx of [-6, -2, 2, 6]) bedAt(dx, -D + 3.2, 0x3f6fc4);
+      } else {
+        bedAt(-W + 2.6, -D + 3, 0x6e5a34);
+        bedAt(-W + 2.6, -D + 6.4, 0x4a5a44);
+      }
+      const counter = box(5.5, 1.1, 1.2, WOOD());   // bar counter + stools
+      put(counter, W - 3.5, -1, 0.55);
+      col(W - 3.5, -1, 2.2);
+      for (let k = 0; k < 3; k++) {
+        const stool = cyl(0.4, 0.4, 0.65, WOOD(), 8);
+        put(stool, W - 5.5 + k * 2, 0.9, 0.32);
+      }
+      prop('barkeep', W - 3.5, 0.9, { label: 'Order a meal (8 crowns)' });
+      tableAt(-2, 2.5, 2.6, 3.6);
+      tableAt(-2, -1.5, 2.6, 3.0);
+      const hb2 = box(2.6, 2.2, 1.1, STONE_D());   // hearth, emissive only
+      put(hb2, -W + 1.6, D - 1.6, 1.1);
+      const hf2 = sph(0.45, mat(0xff9a3c, { rough: 0.3, emissive: 0xff6a1e, ei: 2.2 }), 8, 6);
+      put(hf2, -W + 1.6, D - 2.3, 0.7);
+      col(-W + 1.6, D - 1.6, 1.6);
+      prop('plaque', 2, -D + 1.4, {
+        label: 'Read: house rules',
+        title: kind === 'dorm' ? 'Dorm Rules' : 'House Rules',
+        text: 'Boots off by the hearth. Second cup loosens the tongue. Beds rest you to full — that part is free.'
+      });
+    } else if (kind === 'shop') {
+      const counter = box(6.5, 1.1, 1.2, WOOD());   // counter between you and the goods
+      put(counter, 0, 0.5, 0.55);
+      col(0, 0.5, 2.4);
+      shelfAt(-4.5, -D + 1.6, 0);
+      shelfAt(0, -D + 1.6, 0);
+      shelfAt(4.5, -D + 1.6, 0);
+      for (const dx of [-W + 1.5, W - 1.5]) {
+        const crate = box(1.2, 1.2, 1.2, WOOD());
+        put(crate, dx, D - 2, 0.6);
+        col(dx, D - 2, 1.0);
+      }
+      prop('shop', 0, 2.4, { label: 'Browse wares' });
+      const coin = cyl(0.55, 0.55, 0.12, mat(0xc9a44e, { rough: 0.35, metal: 0.6 }), 16);
+      coin.rotation.x = Math.PI / 2;
+      put(coin, 0, -D + 3.2, 3.2);
+      prop('plaque', -W + 2, -1, {
+        label: 'Read: price board',
+        title: 'Price Board',
+        text: 'Tonic, draught, dry socks. An outsider buys all three within a week, every time, without exception.'
+      });
+    } else if (kind === 'alchemy') {
+      for (const dx of [-3.5, 3.5]) {   // twin brewing cauldrons
+        const pot = sph(1.1, mat(0x2a2a34, { rough: 0.7 }), 12, 10);
+        put(pot, dx, -D + 2.4, 0.8);
+        const brew = sph(0.85, mat(dx < 0 ? 0x4ae88a : 0xb46ae8, { rough: 0.2, emissive: dx < 0 ? 0x2ad86a : 0x7a2fd0, ei: 1.8 }), 10, 8);
+        brew.scale.y = 0.4;
+        put(brew, dx, -D + 2.4, 1.35);
+        col(dx, -D + 2.4, 1.4);
+      }
+      shelfAt(0, -D + 1.5, 0);
+      tableAt(0, 1.5, 2.6, 3);
+      for (let k = 0; k < 5; k++) {   // flask row on the worktable
+        const fl = sph(0.18, mat([0xe84a5a, 0x4aa8e8, 0x4ae88a, 0xe8b44a, 0xb46ae8][k], { rough: 0.2, emissive: 0x222222, ei: 0.4 }), 8, 6);
+        put(fl, -1 + k * 0.5, 1.0, 1.45);
+      }
+      prop('shop', 0, 3.2, { label: 'Buy fresh brews' });
+      prop('herbs', -W + 2.2, 2, { label: 'Snip cuttings (free)' });
+      prop('plaque', W - 2.2, -D + 1.6, {
+        label: 'Read: brew chart',
+        title: 'Brew Chart',
+        text: 'Green calms, violet remembers. Tonics brewed with marsh herbs — the brewer waters them with gossip.'
+      });
+    } else if (kind === 'smith') {
+      const forge = box(3.0, 2.4, 1.8, mat(0x3a3230, { rough: 0.9 }));
+      put(forge, 0, -D + 1.7, 1.2);
+      const fire = sph(0.6, mat(0xff9a3c, { rough: 0.3, emissive: 0xff6a1e, ei: 2.4 }), 10, 8);
+      put(fire, 0, -D + 2.4, 1.0);
+      const fl2 = new THREE.PointLight(0xff8a3c, 1.5, 16, 2);
+      fl2.position.set(bx, by + 1.8, bz - D + 2.4);
+      this.buildingGroup.add(fl2);
+      col(0, -D + 1.7, 2.0);
+      prop('forge', 0, -D + 3.8, { label: 'Use the whetstone' });
+      const stump = cyl(0.55, 0.65, 0.7, WOOD(), 10);   // anvil on a stump
+      put(stump, -3.5, 0, 0.35);
+      const anv = box(1.3, 0.5, 0.5, mat(0x3a3f4a, { rough: 0.45, metal: 0.7 }));
+      put(anv, -3.5, 0, 0.95);
+      col(-3.5, 0, 1.0);
+      prop('dummy', -3.5, 1.6, { label: 'Test edge on the anvil' });
+      const bar = cyl(0.7, 0.7, 1.2, WOOD(), 12);   // quench barrel
+      put(bar, 3.5, -1, 0.6);
+      col(3.5, -1, 1.0);
+      for (let k = 0; k < 3; k++) {   // blade rack
+        const blade = box(0.12, 1.6, 0.3, mat(0x9aa2b2, { rough: 0.3, metal: 0.7 }));
+        put(blade, 2.6 + k * 0.9, -D + 1.3, 1.6);
+      }
+      prop('plaque', W - 2, 1.5, {
+        label: 'Read: smith’s note',
+        title: 'Smith’s Note',
+        text: 'Bring ore, get opinion. The whetstone is free — a sharp edge for the road, honed while you wait.'
+      });
+    } else {
+      bedAt(-3.5, -3, 0x6e5a34);
+      tableAt(3.5, 0.5, 2.2, 3);
+      prop('plaque', 0, -D + 1.4, {
+        label: 'Read: pinned note',
+        title: 'Pinned Note',
+        text: 'Gone to the market — mind the stew, it is mostly turnip. Back by dusk. Probably.'
+      });
+    }
+    prop('exit', 0, D - 0.6, { label: 'Step outside' });
+    const info = BUILDING_INFO[kind] || BUILDING_INFO.house;
+    B.title = info.title;
+    B.sub = info.sub;
+    return B;
   },
 
   IX(lx) { return INT.x + lx; },
@@ -1910,12 +2730,14 @@ const World = {
     }
     if (this.mode === 'overworld') {
       this.cycle(dt, px, pz);
+      this.updateLod(px, pz, dt);   // distance swaps, throttled inside
       // low skies drink the light a little
       const wk = this.weather ? this.weather.kind : 'clear';
       if (wk === 'rain' || wk === 'fog') { this.hemi.intensity *= 0.78; this.sun.intensity *= 0.72; }
       if (wk === 'storm' || wk === 'tornado') { this.hemi.intensity *= 0.62; this.sun.intensity *= 0.55; }
       const py = Entities.player ? Entities.player.y : 0;
       this.weatherTick(dt, px, pz, py);
+      this.tickClouds(dt, px, pz);
     }
     else if (this.sun) {
       this.sun.position.set(px + 180, 320, pz + 120);
@@ -1967,17 +2789,27 @@ const World = {
     }
     this.scene.fog.color.copy(this.scene.background);
     this.stars.material.opacity = clamp(nightF * 1.1, 0, 0.9);
+    // clouds drink the same night
+    if (this._cloudMat) {
+      this._cloudMat.color.setHex(0xf4f6fa).lerp(this._cA.setHex(0x11141f), nightF);
+      this._cloudMat.opacity = 0.82 - nightF * 0.25;
+    }
+
+    // overcast logic: rain, storm, twisters and fog swallow the sky bodies —
+    // a covered sun is simply not there
+    const wk = this.weather ? this.weather.kind : 'clear';
+    const cover = (wk === 'rain' || wk === 'storm' || wk === 'tornado' || wk === 'fog') ? 0 : 1;
 
     // sun disc
     this.sunSpr.position.set(px + sx * 1250, sy * 1250, pz + sz * 1250);
-    this.sunSpr.material.opacity = clamp((elev + 0.12) / 0.2, 0, 1);
+    this.sunSpr.material.opacity = clamp((elev + 0.12) / 0.2, 0, 1) * cover;
     this.sunSpr.visible = this.sunSpr.material.opacity > 0.01;
     // twin moons ride opposite the sun, side by side
     let mx = -sx, my = -sy + 0.12, mz = -sz;
     const mll = Math.hypot(mx, my, mz); mx /= mll; my /= mll; mz /= mll;
     this.moonSpr.position.set(px + mx * 1250, my * 1250, pz + mz * 1250);
-    this.moonSpr.material.opacity = clamp(nightF * 1.2, 0, 1);
-    this.moonSpr.visible = nightF > 0.03;
+    this.moonSpr.material.opacity = clamp(nightF * 1.2, 0, 1) * cover;
+    this.moonSpr.visible = nightF > 0.03 && cover > 0;
     const ca = 0.14;   // the Tear hangs ~8° off Veilmoon
     const tx = mx * Math.cos(ca) - mz * Math.sin(ca), tz = mx * Math.sin(ca) + mz * Math.cos(ca);
     this.tearSpr.position.set(px + tx * 1250, (my - 0.03) * 1250, pz + tz * 1250);

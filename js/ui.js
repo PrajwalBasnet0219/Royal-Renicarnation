@@ -15,6 +15,12 @@ const el = (tag, cls, html) => {
 /* A tiny second renderer used for portraits and the status doll. */
 const Preview = {
   renderer: null, scene: null, cam: null, subject: null, spin: 0, mount: null,
+  // portraits rebuild a full character every open — free the geometry or
+  // every dialogue leaks GPU memory (materials stay: shared mat() cache)
+  _free(root) {
+    if (!root) return;
+    root.traverse(o => { if (o.isMesh && o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+  },
   ensure() {
     if (this.renderer) return;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -27,7 +33,7 @@ const Preview = {
   },
   show(mountEl, look, frame) {
     this.ensure();
-    if (this.subject) this.scene.remove(this.subject.root);
+    if (this.subject) { this.scene.remove(this.subject.root); this._free(this.subject.root); }
     const ch = buildCharacter(look);
     this.subject = ch;
     this.scene.add(ch.root);
@@ -50,7 +56,7 @@ const Preview = {
      never spill out of its box and every card keeps its own picture. */
   snapPortrait(mount, look, frame) {
     this.ensure();
-    if (this.subject) this.scene.remove(this.subject.root);
+    if (this.subject) { this.scene.remove(this.subject.root); this._free(this.subject.root); }
     const ch = buildCharacter(look);
     this.subject = ch;
     ch.update(0.016, 0, null);
@@ -69,6 +75,7 @@ const Preview = {
     mount.innerHTML = '';
     mount.appendChild(c);
     this.scene.remove(ch.root);
+    this._free(ch.root);
     this.subject = null;
   },
   tick(dt) {
@@ -82,7 +89,10 @@ const Preview = {
     this.cam.lookAt(0, this.frame === 'bust' ? 1.56 : 0.95, 0);
     this.renderer.render(this.scene, this.cam);
   },
-  clear() { if (this.subject) { this.scene.remove(this.subject.root); this.subject = null; } this.mount = null; }
+  clear() {
+    if (this.subject) { this.scene.remove(this.subject.root); this._free(this.subject.root); this.subject = null; }
+    this.mount = null;
+  }
 };
 
 const UI = {
@@ -201,6 +211,7 @@ const UI = {
     });
     this._compT = (this._compT || 0) + 1;
     if ((this._compT & 7) === 0) this.refreshCompass();
+    if ((this._compT & 15) === 0) this.drawMini();
   },
 
   /* A slim heading strip: cardinals, main-quest star, known dungeon
@@ -269,6 +280,120 @@ const UI = {
     box.innerHTML = html;
   },
 
+  /* North-up minimap for the top-right corner: cached terrain blitted
+     around the player plus sites, quest star, terrors, ship and party.
+     Throttled by the caller — a few Hz is plenty for a 420 m window. */
+  drawMini() {
+    const cv = $('minimap');
+    if (!cv || !Game.started || !Entities.player) return;
+    const S = cv.width;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#0c0a10';
+    g.fillRect(0, 0, S, S);
+    // circular dial: everything below is clipped to the lens
+    g.save();
+    g.beginPath();
+    g.arc(S / 2, S / 2, S / 2 - 1, 0, TAU);
+    g.clip();
+    if (World.mode !== 'overworld') {
+      g.fillStyle = 'rgba(232,228,218,.5)';
+      g.font = '400 12px system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.fillText(World.mode === 'dungeon' ? '— below —' : '— indoors —', S / 2, S / 2);
+      g.restore();
+      return;
+    }
+    if (!this._mapCache) this.renderMapCache();
+    const p = Entities.player;
+    const R = 420;
+    const N = this._mapCache.width;
+    const sx = (p.x - R + EXTENT) / (EXTENT * 2) * N;
+    const sy = (p.z - R + EXTENT) / (EXTENT * 2) * N;
+    const sw = (R * 2) / (EXTENT * 2) * N;
+    g.imageSmoothingEnabled = true;
+    g.drawImage(this._mapCache, sx, sy, sw, sw, 0, 0, S, S);
+    const proj = (x, z) => ({ x: (x - (p.x - R)) / (R * 2) * S, y: (z - (p.z - R)) / (R * 2) * S });
+    const on = q => q.x > -12 && q.y > -12 && q.x < S + 12 && q.y < S + 12;
+    g.textAlign = 'center';
+    // compass rose corner
+    g.fillStyle = 'rgba(232,228,218,.75)';
+    g.font = '700 10px system-ui, sans-serif';
+    g.fillText('N', S / 2, 12);
+    // towns: hollow for rumors, solid for footprints
+    for (const s of SITES) {
+      const q = proj(s.x, s.z);
+      if (!on(q)) continue;
+      if (Game.visited[s.id]) {
+        g.fillStyle = '#e8e4da';
+        g.beginPath(); g.arc(q.x, q.y, 3, 0, TAU); g.fill();
+      } else {
+        g.strokeStyle = 'rgba(232,228,218,.4)';
+        g.lineWidth = 1;
+        g.beginPath(); g.arc(q.x, q.y, 2.5, 0, TAU); g.stroke();
+      }
+    }
+    // quest star
+    const t = Game.targetPoint();
+    if (t && Game.quest()) {
+      const q = proj(t.x, t.z);
+      if (on(q)) {
+        g.fillStyle = '#ffd27a';
+        g.font = '700 13px system-ui, sans-serif';
+        g.fillText('★', q.x, q.y - 4);
+      }
+    }
+    // terror lairs
+    if (Game.flags.leftCastle && Entities.worldBosses) {
+      g.font = '700 11px system-ui, sans-serif';
+      for (const L of Entities.worldBosses) {
+        if (!MOBS[L.key]) continue;
+        const q = proj(L.x, L.z);
+        if (!on(q)) continue;
+        const alive = Entities.mobs.some(m => !m.dead && m.key === L.key);
+        g.fillStyle = alive ? '#e04860' : 'rgba(224,72,96,.4)';
+        g.fillText('☠', q.x, q.y);
+      }
+    }
+    // your ship + ferries in gold
+    g.strokeStyle = '#d8c188'; g.lineWidth = 1.5;
+    const dia = q => {
+      g.beginPath();
+      g.moveTo(q.x, q.y - 4); g.lineTo(q.x + 4, q.y);
+      g.lineTo(q.x, q.y + 4); g.lineTo(q.x - 4, q.y);
+      g.closePath(); g.stroke();
+    };
+    if (Entities.ship) { const q = proj(Entities.ship.x, Entities.ship.z); if (on(q)) dia(q); }
+    if (Entities.ferries) for (const F of Entities.ferries) {
+      const q = proj(F.x, F.z); if (on(q)) dia(q);
+    }
+    // party in rose
+    g.fillStyle = '#ff9ec4';
+    for (const h of Entities.companions) {
+      const q = proj(h.x, h.z);
+      if (!on(q)) continue;
+      g.beginPath(); g.arc(q.x, q.y, 2, 0, TAU); g.fill();
+    }
+    // you: white arrowhead on your camera heading
+    const fx = Math.sin(Camera3.yaw), fz = Math.cos(Camera3.yaw);
+    const ang = Math.atan2(fx, -fz);
+    g.save();
+    g.translate(S / 2, S / 2);
+    g.rotate(ang);
+    g.fillStyle = '#ffffff';
+    g.strokeStyle = '#000'; g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(0, -6); g.lineTo(4.5, 5); g.lineTo(-4.5, 5);
+    g.closePath(); g.fill(); g.stroke();
+    g.restore();
+    // bright rim so the lens reads against any sky
+    g.restore();
+    g.strokeStyle = 'rgba(216,193,138,.55)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(S / 2, S / 2, S / 2 - 2, 0, TAU);
+    g.stroke();
+  },
+
   toast(msg, kind) {
     const t = el('div', 'toast' + (kind ? ' ' + kind : ''), msg);
     $('toasts').appendChild(t);
@@ -286,6 +411,46 @@ const UI = {
     const b = $('banner');
     b.innerHTML = `<b>${title}</b>${sub ? `<span>${sub}</span>` : ''}`;
     b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  },
+
+  /* Battle meter: every landed hit lands here too — who, how much,
+     crits called out, bosses marked. A fresh 5 s of silence starts a
+     new encounter; the last total lingers, then the plate fades. */
+  dmgHit(src, amt, crit, boss) {
+    const now = performance.now();
+    const D = this._dmg || (this._dmg = { rows: [], total: 0, bySrc: {}, lastT: 0 });
+    if (now - (D.lastT || 0) > 5000) { D.rows = []; D.total = 0; D.bySrc = {}; }
+    D.lastT = now;
+    const n = Math.round(amt);
+    D.total += n;
+    const who = src === 'You' ? 'You' : String(src).split(' ')[0];
+    D.bySrc[who] = (D.bySrc[who] || 0) + n;
+    D.rows.push({ who, n, crit: !!crit, boss: !!boss });
+    if (D.rows.length > 6) D.rows.shift();
+    clearTimeout(D.sumT); clearTimeout(D.hideT);
+    const plate = $('dmglog-plate'), log = $('dmglog'), tot = $('dmgtotal');
+    if (!plate || !log) return;
+    plate.classList.remove('off');
+    plate.style.opacity = 1;
+    const fmt = v => v >= 10000 ? (v / 1000).toFixed(1) + 'k' : String(v);
+    log.innerHTML = D.rows.map(r =>
+      `<div class="drow${r.crit ? ' crit' : ''}"><span>${r.boss ? '☠' : ''}${r.who}</span><b>${r.crit ? 'CRIT ' : ''}${fmt(r.n)}</b></div>`
+    ).join('');
+    const parts = Object.keys(D.bySrc).map(k => `${k} ${fmt(D.bySrc[k])}`);
+    tot.innerHTML = `<span>Total ${fmt(D.total)}</span><em>${parts.join(' · ')}</em>`;
+    // 5 s of silence: freeze the total as the summary, then fade away
+    D.sumT = setTimeout(() => {
+      const l2 = $('dmglog'), t2 = $('dmgtotal'), p2 = $('dmglog-plate');
+      if (!l2 || !this._dmg) return;
+      l2.innerHTML = '';
+      t2.innerHTML = `<span>Total ${fmt(this._dmg.total)}</span><em>${Object.keys(this._dmg.bySrc).map(k => `${k} ${fmt(this._dmg.bySrc[k])}`).join(' · ')}</em>`;
+      p2.style.opacity = 0;
+      this._dmg.hideT = setTimeout(() => {
+        const p3 = $('dmglog-plate');
+        if (p3) p3.classList.add('off');
+        this._dmg.rows = []; this._dmg.total = 0; this._dmg.bySrc = {};
+      }, 1000);
+    }, 5000);
   },
 
   /* ---------------- dialogue ---------------- */
@@ -467,6 +632,8 @@ const UI = {
               <div><span>Focus</span><b>${Math.floor(p.focus)} / ${p.maxfocus}</b></div>
               <div><span>Strike</span><b>${d.atk}</b></div>
               <div><span>Guard</span><b>${d.def}</b></div>
+              <div><span>Crit rate</span><b>${d.critR.toFixed(1)}% (max 60)</b></div>
+              <div><span>Crit dmg</span><b>${Math.round(d.critD)}% (max 300)</b></div>
               <div><span>Veil tuning</span><b>${Math.floor(Game.tuning)} / 100</b></div>
               <div><span>Crowns</span><b>${Game.gold}</b></div>
             </div>
@@ -538,6 +705,23 @@ const UI = {
       const met = Game.met[h.id];
       const aff = Game.aff[h.id] || 0;
       const lvl = Game.bondLevel(h.id);
+      // research card: battle level, known arts, and the next art to grow into
+      const live = Entities.heroineOf && Entities.heroineOf[h.id];
+      const blvl = live ? (live.lvl || 1) : 1;
+      const arts = live && live.skills && live.skills.length ? live.skills.join(' · ') : 'still finding her art';
+      let nextArt = '';
+      if (typeof heroSpells === 'function') {
+        const table = heroSpells({ def: h });
+        const upcoming = Object.keys(table).map(Number).sort((a, b) => a - b)
+          .find(L => L > blvl && !(live && live.skills && live.skills.includes(table[L])));
+        nextArt = upcoming ? ` · next: ${table[upcoming]} at Lv ${upcoming}` : (met ? ' · art complete' : '');
+      }
+      // personal gear + uncapped gacha crit, read straight off her level
+      let gearTxt = '';
+      if (met && live && typeof heroGearBonus === 'function' && typeof heroGearName === 'function') {
+        const gb = heroGearBonus(live);
+        gearTxt = ` · ${heroGearName(live)} · crit ${(5 + blvl * 0.3 + gb.tier * 0.5).toFixed(1)}% (no max)`;
+      }
       const c = el('section', 'frame bond');
       c.innerHTML = `
         <div class="bportrait" data-id="${h.id}"></div>
@@ -547,6 +731,7 @@ const UI = {
           <p class="sub">${met ? h.blurb : 'Your paths have not crossed.'}</p>
           <div class="hbar"><i style="width:${clamp(aff / 21 * 100, 0, 100)}%"></i></div>
           <p class="sub">Bond ${lvl} of 7${met ? ' · likes ' + h.likes : ''}</p>
+          <p class="sub">Battle Lv ${blvl} · ${met ? arts + nextArt + gearTxt : 'her art is still sealed to you'}</p>
         </div>`;
       g.appendChild(c);
     });
@@ -607,7 +792,7 @@ const UI = {
     // reset the view each time the panel opens, centred on the player
     this.mapView = { cx: clamp(Entities.player.x, -EXTENT, EXTENT), cz: clamp(Entities.player.z, -EXTENT, EXTENT), zoom: 1 };
     b.innerHTML = `<div class="maphead">
-        <span class="sub">Drag to pan · wheel or +/− to zoom · click a discovered site to travel. Ochre lines are roads, pale rings are waystones.</span>
+        <span class="sub">Drag to pan · wheel or +/− to zoom · click a discovered site to travel. Ochre lines are roads, pale rings are waystones, ☠ marks terror lairs.</span>
         <span class="mapctl"><button id="map-zin">+</button><button id="map-zout">−</button><button id="map-zreset">Reset</button></span>
       </div><div class="mapframe"><canvas id="worldmap"></canvas></div>
       <div class="sitelist" id="sitelist"></div>`;
@@ -664,6 +849,34 @@ const UI = {
       c.onclick = () => { if (seen) Game.fastTravel(s); };
       list.appendChild(c);
     });
+    // terror index: every lair by name, what it is doing, and what it is near.
+    // Clicking one pans the chart to its hunting grounds (no free travel —
+    // terrors live off the roads, so the last stretch is always on foot).
+    list.appendChild(el('div', 'terrorhead', '<b>☠ Roaming terrors</b><span>eight lairs — go fed, rested, and with friends</span>'));
+    if (Entities.worldBosses && Game.flags.leftCastle) {
+      for (const L of Entities.worldBosses) {
+        const def = (typeof MOBS !== 'undefined' && MOBS[L.key]) || null;
+        if (!def) continue;
+        let near = SITES[0], bd = Infinity;
+        for (const s of SITES) {
+          const dd = (s.x - L.x) * (s.x - L.x) + (s.z - L.z) * (s.z - L.z);
+          if (dd < bd) { bd = dd; near = s; }
+        }
+        const alive = Entities.mobs.some(m => !m.dead && m.key === L.key);
+        const c = el('button', 'siteb' + (alive ? ' seen' : ''),
+          `<b>☠ ${def.name}</b><span>${alive ? 'stirs' : 'resting'} · near ${near.name}</span>`);
+        c.onclick = () => {
+          const cv2 = $('worldmap');
+          this.mapView.cx = clamp(L.x, -EXTENT, EXTENT);
+          this.mapView.cz = clamp(L.z, -EXTENT, EXTENT);
+          this.mapView.zoom = 4;
+          if (cv2) { cv2.width = cv2.parentElement.clientWidth; cv2.height = cv2.parentElement.clientHeight; this.drawMap(cv2); }
+        };
+        list.appendChild(c);
+      }
+    } else {
+      list.appendChild(el('div', 'siteb', '<b>???</b><span>leave the castle to sense them</span>'));
+    }
   },
 
   mapHalfRange() { return EXTENT / this.mapView.zoom; },
@@ -779,6 +992,24 @@ const UI = {
       g.beginPath(); g.moveTo(p.x - 5, p.y - 5); g.lineTo(p.x + 5, p.y + 5);
       g.moveTo(p.x + 5, p.y - 5); g.lineTo(p.x - 5, p.y + 5); g.stroke();
     });
+    // ☠ side-boss index: the eight roaming terror lairs, charted once you
+    // can survive outside the castle walls. Crimson stirs, grey rests.
+    if (Game.flags.leftCastle && Entities.worldBosses) {
+      for (const L of Entities.worldBosses) {
+        const def = (typeof MOBS !== 'undefined' && MOBS[L.key]) || null;
+        if (!def) continue;
+        const p = this.mapProject(cv, L.x, L.z);
+        if (p.x < -20 || p.y < -20 || p.x > cv.width + 20 || p.y > cv.height + 20) continue;
+        const alive = Entities.mobs.some(m => !m.dead && m.key === L.key);
+        g.font = '600 14px ui-sans-serif, system-ui, sans-serif';
+        g.fillStyle = alive ? '#e04860' : 'rgba(224,72,96,.40)';
+        g.fillText('☠', p.x, p.y - 8);
+        g.font = '600 10px ui-sans-serif, system-ui, sans-serif';
+        g.fillStyle = alive ? 'rgba(232,228,218,.92)' : 'rgba(232,228,218,.45)';
+        g.fillText(def.name, p.x, p.y + 22);
+      }
+      g.font = '600 11px ui-sans-serif, system-ui, sans-serif';
+    }
     const pp = this.mapProject(cv, Entities.player.x, Entities.player.z);
     g.fillStyle = '#ffffff';
     g.beginPath(); g.arc(pp.x, pp.y, 4.5, 0, TAU); g.fill();
@@ -792,6 +1023,16 @@ const UI = {
         g.moveTo(sp.x, sp.y - 7); g.lineTo(sp.x + 7, sp.y);
         g.lineTo(sp.x, sp.y + 7); g.lineTo(sp.x - 7, sp.y);
         g.closePath(); g.stroke();
+      }
+    }
+    // dragonroost: gold D where Aurelia perches
+    if (Entities.roost) {
+      const rp = this.mapProject(cv, Entities.roost.x, Entities.roost.z);
+      if (rp.x > -20 && rp.y > -20 && rp.x < cv.width + 20 && rp.y < cv.height + 20) {
+        g.fillStyle = '#d8b46e';
+        g.font = '700 13px ui-sans-serif, system-ui, sans-serif';
+        g.textAlign = 'center';
+        g.fillText('D', rp.x, rp.y);
       }
     }
     g.textAlign = 'left';
